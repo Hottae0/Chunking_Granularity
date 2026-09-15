@@ -1,0 +1,19 @@
+experiment:
+  name: all_novels_8x8
+  sizes: [128, 256, 512, 768, 1024, 1200, 1536, 2048]
+  overlap_ratio: 0.0
+  context_tokens: 4096
+  evidence_tokens: 2048
+  community_level: 2
+  seed: 42
+  max_documents: null
+  max_questions_per_document: null
+  retries: 3
+  retry_delay_seconds: 2
+  workers: 4
+  backend: official
+data:
+  root: data/GraphRAG-Bench
+  questions: Datasets/Questions/novel_questions.json
+  corpus: Datasets/Corpus/novel.json
+  output: runs/all_novels_8x8
