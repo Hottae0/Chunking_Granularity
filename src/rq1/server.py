@@ -44,8 +44,9 @@ def wait_models(client, model, timeout):
             time.sleep(min(2, max(0, deadline-time.monotonic())))
 
 
-def preflight(settings, timeout=600, factory=None):
-    if settings.backend != 'official': raise ValueError('Server runner requires backend: official')
+def validate_data(settings):
+    if settings.backend != 'official':
+        raise ValueError('Server runner requires backend: official')
     missing = [path.resolve() for path in (settings.corpus, settings.questions) if not path.exists()]
     if missing:
         locations = "\n".join(f"- {path}" for path in missing)
@@ -54,6 +55,19 @@ def preflight(settings, timeout=600, factory=None):
             f"{locations}\n"
             "Run: bash scripts/download_novel_data.sh"
         )
+    from rq1.data.graphrag_bench import load_novel
+    documents, grouped = load_novel(
+        settings.corpus, settings.questions, settings.max_documents,
+        settings.max_questions_per_document, settings.document_selection, settings.seed,
+    )
+    return {
+        'documents': len(documents),
+        'questions': sum(len(items) for items in grouped.values()),
+    }
+
+
+def preflight(settings, timeout=600, factory=None):
+    data_report = validate_data(settings)
     if settings.embedding_dimensions <= 0 or settings.indexing_concurrency <= 0:
         raise ValueError('Embedding dimensions and indexing concurrency must be positive')
     if factory is None:
@@ -78,7 +92,7 @@ def preflight(settings, timeout=600, factory=None):
         return dict(chat_model=settings.model, embedding_model=settings.embedding_model,
                     embedding_dimensions=len(vector), structured_output=True,
                     cuda_visible_devices=os.getenv('CUDA_VISIBLE_DEVICES'),
-                    note='Readiness probes only; complete a pilot before the full run')
+                    data=data_report, note='Readiness probes only; complete a pilot before the full run')
     finally:
         chat.close()
         embedding.close()
@@ -86,7 +100,7 @@ def preflight(settings, timeout=600, factory=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['serve-chat','serve-embedding','check','run'])
+    parser.add_argument('action', choices=['validate-data','serve-chat','serve-embedding','check','run'])
     parser.add_argument('--config', type=Path, default=Path('configs/server.yaml'))
     parser.add_argument('--wait-seconds', type=float, default=600)
     parser.add_argument('--tensor-parallel', type=int, default=1)
@@ -96,6 +110,9 @@ def main():
     parser.add_argument('--port', type=int)
     args=parser.parse_args()
     settings=load_settings(args.config)
+    if args.action == 'validate-data':
+        print(json.dumps(validate_data(settings), indent=2))
+        return
     if args.action.startswith('serve-'):
         command=serve_command(args.action.removeprefix('serve-'), settings,
                               args.tensor_parallel, args.gpu_memory_utilization, args.max_model_len, args.port)
