@@ -132,6 +132,13 @@ def _version(name):
 
 def _manifest(settings, docs, questions, completed):
     return {"research_question": "Does the optimal chunk granularity differ between graph extraction and evidence retrieval?",
+            "project_root": str(settings.project.resolve()),
+            "output_directory": str(settings.output.resolve()),
+            "result_files": ["per_query_results.csv", "config_summary.csv",
+                             "question_type_summary.csv", "qa_heatmap.png",
+                             "relation_recall_heatmap.png", "evidence_recall_heatmap.png",
+                             "evidence_recall_proxy_heatmap.png", "rq1_analysis.json",
+                             "near_optimal_cells.csv", "bootstrap_ci.json"],
             "primary_metrics": ["official_answer_correctness", "qa_accuracy_proxy", "qa_em", "answer_f1"],
             "diagnostic_metrics": ["relation_recall_proxy", "path_coverage_proxy",
                                    "evidence_recall_at_1", "evidence_recall_at_5",
