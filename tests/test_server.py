@@ -10,7 +10,7 @@ from rq1.config import load_settings
 from rq1.server import preflight, serve_command
 from rq1.msgraphrag.indexer import _patch_settings
 from rq1.experiments.cache import guard_run
-from rq1.data.graphrag_bench import load_novel
+from rq1.data.graphrag_bench import load_novel, relation_statements
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -41,6 +41,20 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(calls[1]['base_url'],'http://localhost:8001/v1')
         with self.assertRaisesRegex(ValueError,'dimensions mismatch'):
             preflight(replace(self.settings(),embedding_dimensions=4),factory=Client)
+
+    def test_official_nested_relation_annotations(self):
+        expected = ("(Alice, knows, Bob)", "(Bob, visits, Cornwall)")
+        self.assertEqual(relation_statements([
+            ["Alice", "knows", "Bob"],
+            ["Bob", "visits", "Cornwall"],
+        ]), expected)
+        self.assertEqual(
+            relation_statements("[['Alice', 'knows', 'Bob'], ['Bob', 'visits', 'Cornwall']]"),
+            expected,
+        )
+        mapping = relation_statements({"source": "Alice", "relation": "knows", "target": "Bob"})
+        self.assertEqual(len(mapping), 1)
+        self.assertIn('"source": "Alice"', mapping[0])
 
     def test_index_settings_and_secret_free_cache(self):
         import yaml
