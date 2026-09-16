@@ -132,10 +132,14 @@ def _version(name):
 
 def _manifest(settings, docs, questions, completed):
     return {"research_question": "Does the optimal chunk granularity differ between graph extraction and evidence retrieval?",
-            "primary_metrics": ["official_qa_accuracy_if_run", "qa_em", "answer_f1"],
+            "primary_metrics": ["official_answer_correctness", "qa_accuracy_proxy", "qa_em", "answer_f1"],
             "diagnostic_metrics": ["relation_recall_proxy", "path_coverage_proxy",
+                                   "evidence_recall_at_1", "evidence_recall_at_5",
+                                   "evidence_recall_at_10", "fixed_budget_evidence_recall",
                                    "evidence_recall_at_1_proxy", "evidence_recall_at_5_proxy",
-                                   "evidence_recall_at_10_proxy", "fixed_budget_evidence_recall_proxy"],
+                                   "evidence_recall_at_10_proxy", "fixed_budget_evidence_recall_proxy",
+                                   "evidence_span_precision", "evidence_span_recall",
+                                   "evidence_span_f1"],
             "name": settings.name, "backend": settings.backend,
             "sizes": list(settings.sizes), "expected_graph_builds": len(settings.sizes),
             "expected_cells": len(settings.sizes) ** 2, "completed_cells": completed,
@@ -156,9 +160,11 @@ def _manifest(settings, docs, questions, completed):
 def _summarize(settings, rows):
     summaries = []
     metrics = ("qa_em", "answer_f1", "qa_accuracy_proxy", "relation_recall_proxy",
-               "path_coverage_proxy", "evidence_recall_at_1_proxy",
-               "evidence_recall_at_5_proxy", "evidence_recall_at_10_proxy",
-               "fixed_budget_evidence_recall_proxy", "evidence_span_precision",
+               "path_coverage_proxy", "evidence_recall_at_1", "evidence_recall_at_5",
+               "evidence_recall_at_10", "fixed_budget_evidence_recall",
+               "evidence_recall_at_1_proxy", "evidence_recall_at_5_proxy",
+               "evidence_recall_at_10_proxy", "fixed_budget_evidence_recall_proxy",
+               "evidence_span_precision",
                "evidence_span_recall", "evidence_span_f1", "query_latency_seconds", "retrieved_tokens",
                "reported_query_cost_usd")
     for e in settings.sizes:
@@ -272,7 +278,10 @@ def run(config_path: Path) -> Path:
     heatmap(summaries, settings.sizes, "answer_f1", settings.output / "qa_heatmap.png", "QA Answer F1 (local proxy)")
     heatmap(summaries, settings.sizes, "relation_recall_proxy", settings.output / "relation_recall_heatmap.png",
             "Query-relevant relation recall (lexical proxy)")
-    heatmap(summaries, settings.sizes, "evidence_recall_at_5_proxy", settings.output / "evidence_recall_heatmap.png",
+    heatmap(summaries, settings.sizes, "evidence_recall_at_5", settings.output / "evidence_recall_heatmap.png",
+            "Evidence Recall@5 (source-span overlap)")
+    heatmap(summaries, settings.sizes, "evidence_recall_at_5_proxy",
+            settings.output / "evidence_recall_proxy_heatmap.png",
             "Evidence statement Recall@5 (lexical proxy)")
     near, region = _optimal_region(summaries)
     _write_csv(settings.output / "near_optimal_cells.csv", near)
