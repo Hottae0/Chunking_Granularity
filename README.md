@@ -80,9 +80,21 @@ off-diagonal에 형성되는 빈도와 winner stability를 확인합니다. prim
 | `question_type_summary.csv` | 네 질문 유형별 조건 요약 |
 | `rq1_analysis.json` | optimum 동률과 소설 단위 bootstrap winner 빈도 |
 | `near_optimal_cells.csv` | 최대 F1에서 0.02 이내 영역 |
-| `*_heatmap.png` | QA, relation, evidence 성능 지형 |
+| `qa_heatmap.png` | Answer F1; 공식 평가 후 answer correctness로 갱신 |
+| `relation_recall_heatmap.png` | 관계 recall 진단 지형 |
+| `evidence_recall_heatmap.png` | 원문 span 기반 Evidence Recall@5 |
+| `evidence_recall_proxy_heatmap.png` | 문장 단어 중첩 기반 Evidence Recall@5 proxy |
 | `run_manifest.json`, `cache_identity.json` | 설정·데이터 식별·버전·완료 상태 |
 | `cells/e*_r*/benchmark_predictions.json` | 공식 evaluator 입력 |
+
+**Primary metric 열:** `official_answer_correctness`(공식 evaluator 실행 후), `qa_accuracy_proxy`,
+`qa_em`, `answer_f1`. 공식 점수를 최종 주지표로 사용하고 로컬 EM/F1은 항상 저장합니다.
+
+**Diagnostic metric 열:** `relation_recall_proxy`, `path_coverage_proxy`,
+`evidence_recall_at_1/5/10`, `fixed_budget_evidence_recall`,
+각 metric의 `*_proxy` 버전, `evidence_span_precision/recall/f1`.
+모든 열은 `per_query_results.csv`와 cell 평균인 `config_summary.csv`에 저장됩니다.
+정확한 evidence 문장을 원문에서 찾지 못한 span metric은 0이 아니라 빈 값(null)으로 남습니다.
 
 `bootstrap_ci.json`은 기존 코드 호환용 **탐색적** 분석입니다. RQ1의 주 분석은
 `rq1_analysis.json`에 기록됩니다. 누락 cell이나 실패/미채점 질문이 있으면 분석은 incomplete를
@@ -141,10 +153,10 @@ cp .env.example .env
 ```dotenv
 BASE_URL=http://127.0.0.1:8000/v1
 API_KEY=local-key
-MODEL=your-chat-model
+MODEL=Qwen/Qwen2.5-14B-Instruct
 EMBEDDING_BASE_URL=http://127.0.0.1:8001/v1
 EMBEDDING_API_KEY=local-key
-EMBEDDING_MODEL=your-embedding-model
+EMBEDDING_MODEL=BAAI/bge-m3
 EMBEDDING_DIMENSIONS=1024
 LLM_BACKEND=openai_compatible
 ```
@@ -153,19 +165,24 @@ LLM_BACKEND=openai_compatible
 
 ### 모델 서버와 실험 실행
 
-아래 예시는 할당된 GPU 두 장이 컨테이너 안에서 `0,1`로 보일 때입니다. 이미 설정된 GPU 번호나 UUID가
-다르면 그 값을 사용하세요. `VLLM_BIN`에는 설치된 vLLM 실행 파일 경로를 지정할 수 있습니다.
+현재 연구실 서버 지시에 따라 **GPU 0 한 장만 사용**합니다. 각 터미널에서
+`export CUDA_VISIBLE_DEVICES="0"`을 먼저 실행하세요. 생성 모델은 GPU 메모리의 55%, 임베딩 모델은
+10%를 기본 상한으로 사용해 현재 공유 GPU의 기존 작업과 공존할 여유를 둡니다. 서버 사용량이 바뀌면
+관리자와 확인한 뒤 비율을 조정하세요. `VLLM_BIN`에는 설치된 vLLM 실행 파일 경로를 지정할 수 있습니다.
 
 ```bash
 # 터미널 A: 생성 모델
-CUDA_VISIBLE_DEVICES=0 python -m rq1.server serve-chat \
+export CUDA_VISIBLE_DEVICES="0"
+python -m rq1.server serve-chat \
   --config configs/server.yaml --max-model-len 8192
 
 # 터미널 B: 임베딩 모델
-CUDA_VISIBLE_DEVICES=1 python -m rq1.server serve-embedding \
+export CUDA_VISIBLE_DEVICES="0"
+python -m rq1.server serve-embedding \
   --config configs/server.yaml --max-model-len 8192
 
-# 터미널 C: 연결 점검, pilot, 전체 실험
+# 터미널 C: 연결 점검, pilot, Novel 5편 전체 8×8
+export CUDA_VISIBLE_DEVICES="0"
 python -m rq1.server check --config configs/server.yaml --wait-seconds 600
 bash scripts/run_server.sh configs/pilot.yaml
 bash scripts/run_server.sh configs/server.yaml
