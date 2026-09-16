@@ -224,6 +224,6 @@ embedding 6% 약 4.8 GiB로, 두 서버가 추가로 예약하는 상한은 약 
 Qwen2.5-7B BF16 가중치는 약 14–15 GiB, BGE-M3 가중치는 약 1–2 GiB이며
 나머지는 KV cache와 실행 overhead입니다. 모델 다운로드·캐시에는 디스크 약 18–25 GiB를 예상합니다.
 `CHAT_GPU_MEMORY_UTILIZATION`과 `EMBEDDING_GPU_MEMORY_UTILIZATION` 환경 변수로 상한을 조정할 수 있습니다.
-5편 8×8 본 실험은 7B로 고정하고, 필요하면 최적 영역 일부를 14B로 재검증합니다. GPU 연산 사용률이 높은 시간에는
+5편 8×8 본 실험과 후속 분석은 모두 같은 Qwen2.5-7B 모델로 고정합니다. GPU 연산 사용률이 높은 시간에는
 메모리가 남아도 실행 속도가 크게 느려질 수 있습니다.
 
