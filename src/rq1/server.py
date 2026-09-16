@@ -11,7 +11,7 @@ from rq1.config import load_settings
 def serve_command(kind, settings, tensor_parallel=1, memory=None, max_model_len=8192, port=None):
     embedding = kind == 'embedding'
     # Lab server default: chat and embedding share one allocated H100.
-    memory = (0.10 if embedding else 0.55) if memory is None else memory
+    memory = (0.06 if embedding else 0.30) if memory is None else memory
     if tensor_parallel < 1 or not 0 < memory < 1 or max_model_len < 1:
         raise ValueError('Invalid GPU serving parameters')
     model = settings.embedding_model if embedding else settings.model
@@ -91,7 +91,7 @@ def main():
     parser.add_argument('--wait-seconds', type=float, default=600)
     parser.add_argument('--tensor-parallel', type=int, default=1)
     parser.add_argument('--gpu-memory-utilization', type=float, default=None,
-                        help='Per-process vLLM fraction; defaults to 0.55 chat / 0.10 embedding')
+                        help='Per-process vLLM fraction; defaults to 0.30 chat / 0.06 embedding')
     parser.add_argument('--max-model-len', type=int, default=8192)
     parser.add_argument('--port', type=int)
     args=parser.parse_args()
