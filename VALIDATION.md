@@ -6,3 +6,11 @@
 - Source-qualified IDs prevent an observed cross-novel duplicate ID from overwriting results.
 - No real model indexing, QA, paid calls or official judge were run. This is implementation verification, not evidence for the research hypothesis.
 - GraphRAG 3.1.2 is pinned for reproducibility; this is not a claim that it is the latest upstream release.
+
+## Allocated GPU server workflow
+
+- 11 unit/integration tests pass after adding server support.
+- Separate completion/embedding endpoints and credentials; embedding dimensions propagate to GraphRAG vector-store schemas.
+- Tested model command construction, preservation of GPU visibility, readiness probes with test clients, dimension mismatch rejection, and absence of embedding API keys in cache records.
+- Server CLI help, shell syntax, and diff whitespace checks pass.
+- Actual vLLM startup, CUDA compatibility, GPU memory capacity and real model inference have not been tested on this local machine.

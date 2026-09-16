@@ -6,9 +6,11 @@ from .base import Completion, LLMClient
 
 class OpenAICompatibleClient(LLMClient):
     def __init__(self, base_url: str, api_key: str, model: str, embedding_model: str,
-                 retries: int = 3, delay: float = 2):
+                 retries: int = 3, delay: float = 2,
+                 embedding_base_url: str | None = None, embedding_api_key: str | None = None):
         from openai import OpenAI
         self.client = OpenAI(base_url=base_url, api_key=api_key)
+        self.embedding_client = OpenAI(base_url=embedding_base_url or base_url, api_key=embedding_api_key or api_key)
         self.model, self.embedding_model = model, embedding_model
         self.retries, self.delay = retries, delay
 
@@ -32,6 +34,6 @@ class OpenAICompatibleClient(LLMClient):
                           time.perf_counter() - start)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        response = self._call(lambda: self.client.embeddings.create(
+        response = self._call(lambda: self.embedding_client.embeddings.create(
             model=self.embedding_model, input=texts))
         return [x.embedding for x in sorted(response.data, key=lambda x: x.index)]

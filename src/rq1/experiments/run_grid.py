@@ -144,7 +144,7 @@ def _manifest(settings, docs, questions, completed):
             "overlap_ratio": settings.overlap_ratio,
             "context_tokens": settings.context_tokens, "evidence_tokens": settings.evidence_tokens,
             "seed": settings.seed, "base_url": settings.base_url, "model": settings.model,
-            "embedding_model": settings.embedding_model,
+            "embedding_model": settings.embedding_model, "embedding_base_url": settings.embedding_base_url,
             "chat_input_usd_per_million": settings.chat_input_usd_per_million,
             "chat_output_usd_per_million": settings.chat_output_usd_per_million,
             "cost_note": "Official GraphRAG API does not return token usage; query cost is null unless reported usage is available. Index logs preserve server-side accounting evidence.",
@@ -190,6 +190,7 @@ def run(config_path: Path) -> Path:
     settings = load_settings(config_path)
     if settings.backend == "official":
         os.environ["GRAPHRAG_API_KEY"] = settings.api_key
+        os.environ["GRAPHRAG_EMBEDDING_API_KEY"] = settings.embedding_api_key
     settings.output.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", force=True,
                         handlers=[logging.StreamHandler(sys.stdout),

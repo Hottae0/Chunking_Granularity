@@ -11,5 +11,6 @@ def make_client(settings) -> LLMClient:
     if settings.llm_backend == "openai_compatible":
         return OpenAICompatibleClient(settings.base_url, settings.api_key,
                                       settings.model, settings.embedding_model,
-                                      settings.retries, settings.retry_delay_seconds)
+                                      settings.retries, settings.retry_delay_seconds,
+                                      settings.embedding_base_url, settings.embedding_api_key)
     raise ValueError("Unknown LLM backend. Add a new LLMClient implementation.")

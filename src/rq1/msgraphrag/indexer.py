@@ -29,9 +29,13 @@ def _patch_settings(path: Path, settings, extraction_size: int) -> None:
         for model in raw[section].values():
             model["model_provider"] = "openai"
             model["model"] = model_name
-            model["api_base"] = settings.base_url
-            model["api_key"] = "${GRAPHRAG_API_KEY}"
+            model["api_base"] = settings.embedding_base_url if section == "embedding_models" else settings.base_url
+            model["api_key"] = "${GRAPHRAG_EMBEDDING_API_KEY}" if section == "embedding_models" else "${GRAPHRAG_API_KEY}"
             model["retry"] = {"type": "exponential_backoff", "max_retries": settings.retries}
+    raw["concurrent_requests"] = settings.indexing_concurrency
+    raw["vector_store"]["vector_size"] = settings.embedding_dimensions
+    for schema in (raw["vector_store"].get("index_schema") or {}).values():
+        schema["vector_size"] = settings.embedding_dimensions
     raw["chunking"]["type"] = "tokens"
     raw["chunking"]["size"] = extraction_size
     raw["chunking"]["overlap"] = int(extraction_size * settings.overlap_ratio)
@@ -67,6 +71,7 @@ def build_graph(settings, documents, extraction_size: int, logger) -> Path:
     config = root / "settings.yaml"
     env = os.environ.copy()
     env["GRAPHRAG_API_KEY"] = settings.api_key
+    env["GRAPHRAG_EMBEDDING_API_KEY"] = settings.embedding_api_key
     if not config.exists():
         # Official init creates compatible prompts for the installed GraphRAG version.
         subprocess.run([sys.executable, "-m", "graphrag", "init", "--root", str(root)],
