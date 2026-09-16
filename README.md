@@ -49,8 +49,8 @@ python -m rq1.experiments.run_grid --config configs/pilot.yaml
 python -m rq1.experiments.run_grid --config configs/full.yaml
 ```
 
-`full.yaml`은 전체 20편/2,010개 질문 데이터 기준 64조건, **128,640 QA 호출**입니다.
-실제 개수는 입력 데이터에 따라 달라지며 manifest에 기록됩니다.
+`full.yaml`은 seed 42로 Novel 5편을 선택하고, 선택된 5편의 질문을 전부 사용해 64조건을 평가합니다.
+실제 질문 수와 총 QA 호출 수는 입력 데이터에 따라 달라지며 manifest에 기록됩니다.
 `pilot.yaml`은 작은 사전 점검용입니다. 같은 명령으로 재개할 수 있습니다.
 설정이나 코드를 바꾸면 새 `data.output`을 사용하세요. 구버전의 식별 정보 없는 캐시는 재사용하지 않습니다.
 
@@ -101,7 +101,7 @@ recall은 단어 중첩 proxy입니다. evidence가 원문에 정확히 있으�
 python -m rq1.experiments.official_eval --config configs/full.yaml \
   --benchmark-root /path/to/GraphRAG-Benchmark \
   --judge-model YOUR_JUDGE --embedding-model /path/to/bge-model
-python -m rq1.experiments.analysis runs/novel20_8x8/per_query_results.csv \
+python -m rq1.experiments.analysis runs/novel5_8x8/per_query_results.csv \
   --metric official_answer_correctness
 ```
 
