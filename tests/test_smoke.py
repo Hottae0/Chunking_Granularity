@@ -53,6 +53,9 @@ class SmokeTests(unittest.TestCase):
             with (output / "per_query_results.csv").open(newline="", encoding="utf-8") as stream:
                 rows = list(csv.DictReader(stream))
             self.assertEqual(len(rows), 8)
+            run(path)
+            with (output / "per_query_results.csv").open() as stream:
+                self.assertEqual(len(list(csv.DictReader(stream))), 8)
             self.assertTrue(all(r["status"] == "ok" for r in rows))
 
 

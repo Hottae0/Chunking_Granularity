@@ -1,144 +1,120 @@
-# GraphRAG 청크 크기 실험 (RQ1)
+# Stage-specific chunk granularity — GraphRAG RQ1 / RQ2
 
-**연구 질문:** 그래프 추출에 좋은 청크 크기와 근거 검색에 좋은 청크 크기는 다른가?
+첨부 실험 설계의 fixed-length **8 × 8 factorial experiment** 구현입니다.
+`g_E`(그래프 추출)와 `g_R`(근거 검색)를 각각
+`128, 256, 512, 768, 1024, 1200, 1536, 2048` 토큰으로 바꿉니다.
+PDF 표의 검색 열에는 2048이 빠져 있지만, 본문 8×8 설명에 맞춰 양쪽 모두 8개를 사용합니다.
 
-MS GraphRAG **Local Search**에서 두 크기를 독립적으로 바꿔 봅니다.
+## 재사용하는 것
 
-| 기호 | 단계 | 크기 후보 |
-| --- | --- | --- |
-| `g_E` | entity/relationship 추출 | 128, 256, 512, 768, 1024, 1200, 1536, 2048 |
-| `g_R` | 답변 근거가 되는 원문 검색 | 같은 8개 값 |
+- [Microsoft GraphRAG](https://github.com/microsoft/graphrag) 3.1.2의 standard indexing, entity embeddings, community reports, Local Search를 사용합니다. upstream을 복제해 고치지 않습니다.
+- 기존 저장소의 chunking, provenance 정렬, API client, 공식 평가 연결, heatmap을 유지하고 오류를 수정했습니다.
+- 전체 corpus의 그래프는 **E별 1회, 총 8회** 만들고 8개 R 조건에서 재사용합니다.
+- 원문 검색 청크는 **R별 1회, 총 8세트** 만들고 각 E에서 재사용합니다.
+- 성공한 질문은 재개 시 건너뜁니다. 데이터·질문·코드·모델·설정·주요 패키지 버전 fingerprint가 다르면 캐시 재사용을 거부합니다.
+- 구버전 코드는 Git 이력에 남고, 현재 기본 브랜치는 이 구현을 사용합니다.
 
-두 값이 같은 대각선 8개 cell은 **shared-chunk baseline**, 다른 56개 cell은 **stage-specific 설정**입니다. 기본 실행은 GraphRAG-Bench **Novel 5편을 seed 42로 선택하고, 해당 5편의 질문은 전부 사용**합니다.
+## 설치
 
-> 연구실 서버 주소와 모델명은 나중에 `.env`에 넣으면 됩니다. 서버 없이 가능한 mock 테스트는 맨 아래에 있습니다.
+Python 3.11 이상:
 
-## 1. 설치
-
-Python 3.11 이상에서 프로젝트 폴더를 열고 다음을 실행합니다.
-
-```powershell
-py -3.11 -m venv .venv
-.venv\Scripts\Activate.ps1
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
 python -m pip install -e .
-Copy-Item .env.example .env
+cp .env.example .env      # Windows: Copy-Item .env.example .env
 ```
 
-[GraphRAG-Bench 공식 dataset](https://huggingface.co/datasets/GraphRAG-Bench/GraphRAG-Bench)에서 데이터를 받아 아래에 둡니다.
+`.env`에 연구실 OpenAI-compatible 서버의 `BASE_URL`, `API_KEY`, `MODEL`,
+`EMBEDDING_MODEL`을 설정합니다. GraphRAG가 사용하는 structured output 및 embedding을 지원해야 합니다.
+첫 토크나이저 실행에는 공개 cl100k_base 파일 다운로드가 필요합니다.
+
+[공식 GraphRAG-Bench](https://huggingface.co/datasets/GraphRAG-Bench/GraphRAG-Bench)의 파일을 준비합니다:
 
 ```text
-data/GraphRAG-Bench/
-└─ Datasets/
-   ├─ Corpus/novel.json
-   └─ Questions/novel_questions.json
+data/GraphRAG-Bench/Datasets/Corpus/novel.json
+data/GraphRAG-Bench/Datasets/Questions/novel_questions.json
 ```
 
-실험에 사용한 dataset 버전 또는 commit도 기록하세요. 원문이나 질문 파일이 바뀌면 이전 실행 캐시를 다시 쓰면 안 됩니다.
+공식 `corpus_name/context`, 질문의 문자열 `evidence`, `evidence_triple` 필드를 읽습니다.
+합성 예제의 문자열 배열 `evidence_relations`도 지원합니다.
+질문 키는 `source::id`로 구분합니다. 실제 데이터의 소설 간 ID 충돌을 보존하며, 같은 소설 내 중복 ID, 없는 source, 빈 corpus는 오류로 처리합니다.
 
-## 2. 연구실 LLM 서버 설정
+## 실행
 
-`.env`의 네 값을 연구실 서버 정보로 바꿉니다.
-
-```dotenv
-BASE_URL=http://your-lab-server/v1
-API_KEY=your-key
-MODEL=your-chat-model
-EMBEDDING_MODEL=your-embedding-model
-```
-
-`BASE_URL`은 OpenAI-compatible API의 `/v1` 주소입니다. 공식 MS GraphRAG index와 Local Search는 내부 LiteLLM으로 completion/embedding API를 호출합니다. 서버는 graph 추출용 structured JSON output과 embedding 호출을 지원해야 합니다.
-
-연구실 서버가 OpenAI-compatible하지 않다면 `src/rq1/llm/base.py`의 `LLMClient`를 구현할 수 있습니다. **공식 GraphRAG 경로까지 비호환 서버로 실행하려면** GraphRAG의 [custom model protocol](https://microsoft.github.io/graphrag/config/models/)도 등록해야 합니다. `mock` backend는 동작 점검용이며 연구 성능으로 해석하지 않습니다.
-
-## 3. 8×8 실행
-
-```powershell
+```bash
+python -m rq1.experiments.run_grid --config configs/synthetic.json
+python -m unittest discover -s tests -v
+python -m rq1.experiments.run_grid --config configs/pilot.yaml
 python -m rq1.experiments.run_grid --config configs/full.yaml
 ```
 
-`configs/full.yaml`의 기본값은 다음과 같습니다.
+`full.yaml`은 전체 20편/2,010개 질문 데이터 기준 64조건, **128,640 QA 호출**입니다.
+실제 개수는 입력 데이터에 따라 달라지며 manifest에 기록됩니다.
+`pilot.yaml`은 작은 사전 점검용입니다. 같은 명령으로 재개할 수 있습니다.
+설정이나 코드를 바꾸면 새 `data.output`을 사용하세요. 구버전의 식별 정보 없는 캐시는 재사용하지 않습니다.
 
-| 설정 | 값 |
-| --- | --- |
-| Novel | seed 42로 선택한 5편 |
-| 질문 | 선택한 5편의 질문 전부 |
-| `g_E × g_R` | 8 × 8 = 64 cell |
-| chunk overlap | 0 |
-| Local Search context budget | 모든 cell에서 4096 token |
-| evidence 진단 budget | 모든 cell에서 2048 token |
+## 실험 통제와 해석
 
-선택된 Novel 제목과 질문 수는 실행 후 `run_manifest.json`에서 확인할 수 있습니다. 먼저 작은 동작 확인이 필요하면 `configs/pilot.yaml`로 4×4를 실행할 수 있고, 나중에 Novel 전체로 확장하려면 `configs/all_novels.yaml`을 사용합니다.
+모든 조건에서 원문, 질문, 모델, tokenizer(cl100k_base), overlap(0), seed와 Local Search
+context 상한(4096)을 고정합니다. text-unit 비중은 0.5, community 비중은 0입니다.
+근거 진단 예산은 2048 토큰입니다. **같은 예산 상한이지, 실제 제공 토큰 수가 항상 같다는 뜻은 아닙니다.**
+Local Search가 graph tables와 source rows를 함께 포장하므로 표 헤더와 fact 텍스트도 context를 차지합니다.
+답변은 공식 Local Search의 `Single Sentence` 설정입니다. 장문 요약·창작 task의 native 설정과 다를 수 있으므로 task별 결과를 함께 보세요.
 
-```powershell
-python -m rq1.experiments.run_grid --config configs/pilot.yaml
-python -m rq1.experiments.run_grid --config configs/all_novels.yaml
-```
+원문 문자 범위로 extraction unit과 retrieval unit을 연결합니다. fact→chunk와 chunk→fact는
+동일한 fact-specific mapping을 사용합니다. 관계 provenance는 보통 extraction unit 전체로,
+정밀한 mention-level evidence가 아닙니다. 따라서 관측 효과에는 provenance 폭의 효과도 포함됩니다.
 
-Windows용 `scripts/run_full.ps1`/`run_pilot.ps1`와 Linux용 `.sh`도 있습니다. 중단된 실행은 같은 명령으로 재개할 수 있습니다. **진행 중인 run의 모델, corpus, overlap, token budget은 바꾸지 마세요.** 설정을 바꿀 때는 output 경로도 새로 지정해야 캐시가 섞이지 않습니다.
+RQ1은 전체 grid의 joint optimum, 동률, 0.02 이내 영역과 소설 단위 bootstrap 최적 영역 안정성을 봅니다.
+개별 extraction fidelity의 독립 최적점을 증명한다고 해석하지 않습니다.
+RQ2는 seed로 소설을 dev/test에 나눠 dev에서 best diagonal/off-diagonal을 선택하고,
+선택한 두 조건을 고정하여 test 소설 단위 paired cluster bootstrap 95% CI를 계산합니다.
+최소 4편이 필요하며 한 편 합성 예제에서는 RQ2가 unavailable인 것이 정상입니다.
+원문 corpus는 공유하고 평가 질문을 소설별로 분리합니다. primary metric은 결과를 보기 전에 정하세요.
 
-## 그래프를 8회만 만드는 방법
-
-MS GraphRAG 기본 파이프라인은 추출과 검색에 하나의 `TextUnit` 분할을 공유합니다. 이 실험에서는:
-
-1. 공식 standard indexer로 `g_E`별 그래프를 **한 번씩**, 총 8회 만듭니다.
-2. 각 그래프의 공식 entities/relationships, community tables, embedding store를 재사용합니다.
-3. 같은 원문을 `g_R`로 다시 나누어 검색용 `text_units.parquet`를 만듭니다.
-4. 추출 unit과 검색 unit이 겹치는 **원문 문자 범위**로 entity/relationship 링크를 다시 매핑합니다.
-5. 각 `(g_E, g_R)`의 parquet, 결과, 재개 캐시는 별도 `cells/e*_r*/` 폴더에 둡니다.
-
-따라서 **64번 재-indexing하지 않습니다.** 기존 추출 `text_unit_ids`를 검색 unit ID로 그대로 복사하지도 않습니다. graph fact와 원문 청크를 함께 쓰는 **Local Search**를 선택한 이유도 여기에 있습니다. Global Search는 community report 중심이라 `g_R` 효과를 직접 보기 어렵습니다.
-
-**Provenance 한계:** 공식 GraphRAG 관계 출력은 관계를 뒷받침하는 정확한 원문 quote/offset을 주지 않습니다. entity title이 원문에 있으면 그 위치를 저장하지만, 관계는 보통 *추출 TextUnit 전체 범위*를 저장합니다. 이 범위가 여러 검색 unit에 관계를 연결할 수 있으므로 `provenance.parquet`의 `precision`을 확인해야 합니다. 추출 TextUnit을 원문에서 정확히 찾지 못하면 실행을 중단합니다.
-
-## 4. 결과 확인
-
-기본 8×8 결과는 `runs/novel5_8x8/` 아래에 저장됩니다.
+## 결과
 
 | 파일 | 내용 |
 | --- | --- |
-| `per_query_results.csv` | 질문 × cell별 답변, 지표, latency, token |
-| `config_summary.csv` | cell별 평균과 성공/실패 질문 수 |
-| `qa_heatmap.png` | QA 성능 지형 |
-| `relation_recall_heatmap.png` | 관계 진단 지형 |
-| `evidence_recall_heatmap.png` | 근거 검색 진단 지형 |
-| `run_manifest.json` | Novel, 설정, 버전, corpus hash |
-| `bootstrap_ci.json` | 최고 대각선과 비대각선의 paired bootstrap CI |
-| `near_optimal_cells.csv` | 최고 F1에서 0.02 이내인 cell |
+| `per_query_results.csv` | 질문별 답변, QA/관계/근거 지표, latency, 실제 검색 토큰 |
+| `config_summary.csv` | 64조건 평균과 오류 수 |
+| `question_type_summary.csv` | 네 질문 유형별 조건 요약 |
+| `rq1_rq2_analysis.json` | optimum 동률·bootstrap 빈도, dev 선택/test CI |
+| `near_optimal_cells.csv` | 최대 F1에서 0.02 이내 영역 |
+| `*_heatmap.png` | QA, relation, evidence 성능 지형 |
+| `run_manifest.json`, `cache_identity.json` | 설정·데이터 식별·버전·완료 상태 |
+| `cells/e*_r*/benchmark_predictions.json` | 공식 evaluator 입력 |
 
-**Primary downstream metric**은 QA입니다. 기본 grid의 `qa_em`/`answer_f1`은 공개된 정규화와 토큰 중첩 방식으로 계산합니다. `qa_accuracy_proxy`는 EM과 같은 정확 일치 비율이며 **공식 benchmark Accuracy가 아닙니다**.
+`bootstrap_ci.json`은 기존 코드 호환용 **탐색적** 분석입니다. 동일 데이터에서 선택한 최고점 비교이므로
+논문 주장은 새 `rq1_rq2_analysis.json`의 held-out 결과를 사용하세요. 누락 cell이나 실패/미채점 질문이
+있으면 새 분석은 incomplete를 반환하고 성공 사례만 골라 최적값을 내지 않습니다.
 
-GraphRAG-Bench는 task type별 `answer_correctness`, ROUGE, coverage 등을 제공합니다. 최종 비교에는 [공식 generation evaluator](https://github.com/GraphRAG-Bench/GraphRAG-Benchmark/blob/main/Evaluation/generation_eval.py)의 `answer_correctness`를 우선 사용하세요. evaluator repository와 judge LLM/BGE embedding을 준비한 뒤 실행합니다.
+EM/F1/accuracy_proxy는 로컬 문자열 지표입니다. relation recall/path coverage와 evidence statement
+recall은 단어 중첩 proxy입니다. evidence가 원문에 정확히 있으면 별도로 span 지표를 계산하고,
+찾을 수 없으면 null입니다. 정확 근거 Recall@k의 hit는 문자 범위가 일부라도 겹치는 기준입니다.
+근거 평가에서 잘못된 소설의 청크도 rank와 budget을 소비합니다. 공식 관계 정확도와 동일하지 않습니다.
 
-```powershell
-python -m rq1.experiments.official_eval `
-  --config configs/full.yaml `
-  --benchmark-root C:\path\to\GraphRAG-Benchmark `
-  --judge-model your-judge-model `
-  --embedding-model C:\path\to\bge-model
+## 공식 benchmark 평가
+
+[공식 evaluator](https://github.com/GraphRAG-Bench/GraphRAG-Benchmark/tree/main/Evaluation)의 의존성과 judge를 준비한 뒤:
+
+```bash
+python -m rq1.experiments.official_eval --config configs/full.yaml \
+  --benchmark-root /path/to/GraphRAG-Benchmark \
+  --judge-model YOUR_JUDGE --embedding-model /path/to/bge-model
+python -m rq1.experiments.analysis runs/novel20_8x8/per_query_results.csv \
+  --metric official_answer_correctness
 ```
 
-이 명령은 cell별 공식 형식 prediction을 평가하고 `official_answer_correctness`를 query/summary에 추가하며 QA heatmap을 공식 점수로 다시 그립니다. evaluator 의존성은 해당 repository 지침에 따라 설치해야 합니다.
+task에 따라 공식 evaluator가 answer_correctness를 제공하지 않을 수 있습니다. 이 경우 전체 혼합 분석은
+incomplete이며 모든 task에 동일 지표가 있다고 가정하지 않습니다. 필요한 task subset을 사전 정의하세요.
+judge, benchmark commit, 모델 버전도 실험 기록에 고정하세요.
+공식 API usage는 직접 반환되지 않아 비용은 null일 수 있습니다. 서버 로그로 실제 비용을 확인하세요.
 
-**Diagnostic metric**은 QA 차이의 원인을 살피는 데 사용합니다. 관계 recall/path coverage와 evidence Recall@1/@5/@10 및 고정 token 예산 recall은 gold annotation과 출력 텍스트의 **단어 중첩 proxy**입니다. gold evidence 문장이 원문에 정확히 있을 때만 문자 범위 기반 evidence recall과 span precision/recall/F1도 계산합니다. 일치하는 원문 범위가 없으면 `null`이며 0으로 평균하지 않습니다. 이 진단 점수만으로 최적 설정을 결정하지 마세요.
+## 검증 범위
 
-## 5. 통계와 재현성
-
-```powershell
-python -m rq1.experiments.bootstrap runs/novel5_8x8/per_query_results.csv `
-  --metric answer_f1
-```
-
-스크립트는 **같은 질문**에서 최고 shared cell과 최고 stage-specific cell을 비교하고 paired bootstrap CI를 계산합니다. `near_optimal_cells.csv`도 함께 보세요. 한 최고점만 튀는지, 높은 성능이 인접한 설정에도 유지되는지가 연구 질문에 중요합니다.
-
-같은 질문으로 최적 cell을 고르고 CI까지 계산하면 **선택 편향**이 있습니다. 결론은 dev에서 설정을 고른 뒤 held-out Novel/질문에서 다시 비교하는 방식으로 확인해야 합니다. 모델, prompt, tokenizer, embedding 모델, judge, clustering seed, 데이터 버전, budget, overlap도 고정하세요.
-
-질의 latency와 retrieved token은 각 질문에 기록합니다. 공식 GraphRAG API는 LLM usage를 질의 결과에 직접 반환하지 않아 실제 query 비용은 `null`이며, 연구실 서버 usage 로그와 `index.log`/`query.log`를 함께 확인해야 합니다. MS GraphRAG 버전을 고정하세요. 이 프로젝트는 **공식 standard index와 공식 Local Search API**를 쓰지만, dual segmentation과 위치 정렬은 연구용 custom layer입니다.
-
-## 서버 없이 동작 확인
-
-```powershell
-python -m unittest discover -s tests -v
-python -m rq1.experiments.run_grid --config configs/synthetic.json
-```
-
-작은 synthetic 문서를 mock LLM으로 돌려 파일 생성과 재개 경로를 확인합니다. 이 점수는 실제 Novel benchmark 결과가 아닙니다.
+단위·합성 통합 테스트는 loader, provenance, 전체 grid, 캐시 무효화, wrong-source 평가,
+소설별 검증 분리와 incomplete 처리 등을 검사합니다. mock은 lexical plumbing fixture이며 E에 따른
+QA 효과를 검증하는 연구 결과가 아닙니다. 실제 모델을 사용한 전체 Novel 실험과 공식 judge는
+서버 및 데이터 준비 후 별도로 실행해야 합니다.

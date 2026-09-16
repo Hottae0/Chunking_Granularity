@@ -25,7 +25,7 @@ def _uuid(value: str) -> str:
 
 
 def adapt_view(graph_root: Path, documents, retrieval_size: int,
-               overlap_ratio: float, cell_dir: Path):
+               overlap_ratio: float, cell_dir: Path, cached_chunks=None):
     """Replace extraction TextUnit links with retrieval-unit links by source span.
 
     Writes official-shaped parquet tables under a separate cell output directory.
@@ -54,7 +54,8 @@ def adapt_view(graph_root: Path, documents, retrieval_size: int,
     retrieval = []
     source_chunks = {}
     for doc in documents:
-        chunks = fixed_chunks(doc.name, doc.text, retrieval_size, overlap_ratio)
+        chunks = ([c for c in cached_chunks if c.document == doc.name] if cached_chunks is not None
+                  else fixed_chunks(doc.name, doc.text, retrieval_size, overlap_ratio))
         source_chunks[doc.name] = chunks
         retrieval.extend(chunks)
     original_to_retrieval: dict[str, set[str]] = {}
@@ -86,7 +87,10 @@ def adapt_view(graph_root: Path, documents, retrieval_size: int,
     new_ids = {c.id: _uuid(c.id) for c in retrieval}
     def remap(value):
         return sorted({new_ids[x] for old in _ids(value) for x in original_to_retrieval.get(old, ())})
-    for table_name in ("entities", "relationships", "communities", "community_reports"):
+    for table_name, mapped in (("entities", mapped_entities), ("relationships", mapped_relationships)):
+        tables[table_name]["text_unit_ids"] = tables[table_name]["id"].apply(
+            lambda ident: sorted(new_ids[x] for x in mapped[str(ident)]))
+    for table_name in ("communities", "community_reports"):
         if "text_unit_ids" in tables[table_name]:
             tables[table_name]["text_unit_ids"] = tables[table_name]["text_unit_ids"].apply(remap)
     rows = []

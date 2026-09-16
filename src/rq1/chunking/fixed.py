@@ -19,25 +19,30 @@ def token_offsets(text: str, encoding_model: str = "cl100k_base") -> list[tuple[
     """Character spans of token IDs, preserving exact source offsets.
 
     tiktoken does not expose character offsets; round-trip each token's bytes.
-    This assumes UTF-8 decoded text, and rejects ambiguous byte boundaries.
+    UTF-8 token boundaries inside a codepoint are rounded down consistently.
     """
     try:
         import tiktoken
-    except ImportError:
-        return [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
+    except ImportError as exc:
+        raise RuntimeError("Install tiktoken; never substitute a different tokenizer in the experiment") from exc
     enc = tiktoken.get_encoding(encoding_model)
     ids = enc.encode(text)
     offsets, byte_pos = [], 0
     source = text.encode("utf-8")
+    # Linear byte-to-character mapping; repeatedly decoding source prefixes is quadratic.
+    char_at = [0] * (len(source) + 1)
+    position = 0
+    for char_index, char in enumerate(text):
+        width = len(char.encode("utf-8"))
+        for j in range(width): char_at[position + j] = char_index
+        position += width
+        char_at[position] = char_index + 1
     for token in ids:
         piece = enc.decode_single_token_bytes(token)
         start_byte, byte_pos = byte_pos, byte_pos + len(piece)
         if source[start_byte:byte_pos] != piece:
             raise ValueError("Tokenizer did not round-trip source text")
-        # Byte boundaries inside a UTF-8 codepoint are rounded outwards.
-        start = len(source[:start_byte].decode("utf-8", errors="ignore"))
-        end = len(source[:byte_pos].decode("utf-8", errors="ignore"))
-        offsets.append((start, end))
+        offsets.append((char_at[start_byte], char_at[byte_pos]))
     return offsets
 
 

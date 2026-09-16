@@ -10,6 +10,7 @@ from pathlib import Path
 
 def paired_bootstrap(rows: list[dict], metric: str = "answer_f1", repetitions: int = 2000,
                      seed: int = 42) -> dict:
+    if repetitions < 1: raise ValueError("repetitions must be positive")
     by_cell = defaultdict(dict)
     for row in rows:
         if row.get("status") == "ok" and row.get(metric) not in (None, ""):
@@ -19,8 +20,8 @@ def paired_bootstrap(rows: list[dict], metric: str = "answer_f1", repetitions: i
     keys = sorted(set.intersection(*(set(x) for x in by_cell.values())))
     if not keys:
         raise ValueError("No paired questions across all configurations")
-    diagonal = [c for c in by_cell if c[0] == c[1]]
-    off_diagonal = [c for c in by_cell if c[0] != c[1]]
+    diagonal = sorted(c for c in by_cell if c[0] == c[1])
+    off_diagonal = sorted(c for c in by_cell if c[0] != c[1])
     if not diagonal or not off_diagonal:
         raise ValueError("Both diagonal and off-diagonal cells are required")
     def best(cells, sample):
