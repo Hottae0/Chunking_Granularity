@@ -49,7 +49,7 @@ python -m rq1.experiments.run_grid --config configs/pilot.yaml
 python -m rq1.experiments.run_grid --config configs/full.yaml
 ```
 
-`full.yaml`은 seed 42로 Novel 5편을 선택하고, 각 소설에서 질문 10개를 재현 가능하게 표본 추출하여 최대 50개 질문으로 64조건을 평가합니다.
+`full.yaml`은 seed 42로 Novel 5편을 선택하고, 선택된 5편의 질문을 전부 사용해 64조건을 평가합니다. 실제 질문 수와 총 QA 호출 수는 manifest에 기록됩니다.
 실제 질문 수와 총 QA 호출 수는 입력 데이터에 따라 달라지며 manifest에 기록됩니다.
 `pilot.yaml`은 작은 사전 점검용입니다. 같은 명령으로 재개할 수 있습니다.
 설정이나 코드를 바꾸면 새 `data.output`을 사용하세요. 구버전의 식별 정보 없는 캐시는 재사용하지 않습니다.
@@ -113,7 +113,7 @@ recall은 단어 중첩 proxy입니다. evidence가 원문에 정확히 있으�
 python -m rq1.experiments.official_eval --config configs/full.yaml \
   --benchmark-root /path/to/GraphRAG-Benchmark \
   --judge-model YOUR_JUDGE --embedding-model /path/to/bge-model
-python -m rq1.experiments.analysis runs/novel5_q10_8x8/per_query_results.csv \
+python -m rq1.experiments.analysis runs/novel5_allq_8x8/per_query_results.csv \
   --metric official_answer_correctness
 ```
 
@@ -178,7 +178,7 @@ export CUDA_VISIBLE_DEVICES="0"
 # 작은 연결·저장 점검
 bash scripts/run_server.sh configs/pilot.yaml
 
-# Novel 5편, 소설당 질문 10개, 8×8 본 실험
+# Novel 5편, 선택된 소설의 질문 전부, 8×8 본 실험
 bash scripts/run_server.sh configs/server.yaml
 ```
 
@@ -188,7 +188,7 @@ process group을 종료하므로 GPU 메모리가 반환됩니다. 모델 가중
 다운로드를 줄입니다. 모델 로그는 결과 폴더의 `model_logs/`에 저장됩니다.
 
 서버 저장소가 `/home/hottae0/Chunking_Granularity`에 있으면 본 실험 결과의 절대 경로는
-`/home/hottae0/Chunking_Granularity/runs/server_novel5_q10_8x8`입니다. 완료 시
+`/home/hottae0/Chunking_Granularity/runs/server_novel5_allq_8x8`입니다. 완료 시
 `results_complete.json`에 절대 출력 경로, 64개 cell 완료 수, 필수 결과 파일의 절대 경로가 기록됩니다.
 중단 후 같은 명령을 다시 실행하면 완료된 그래프와 성공한 질문을 재사용합니다. 동일 output에 실험
 process를 동시에 두 개 실행하지 마세요. 실제 속도는 공유 GPU의 다른 작업 부하에 영향을 받습니다.
@@ -224,6 +224,6 @@ embedding 6% 약 4.8 GiB로, 두 서버가 추가로 예약하는 상한은 약 
 Qwen2.5-7B BF16 가중치는 약 14–15 GiB, BGE-M3 가중치는 약 1–2 GiB이며
 나머지는 KV cache와 실행 overhead입니다. 모델 다운로드·캐시에는 디스크 약 18–25 GiB를 예상합니다.
 `CHAT_GPU_MEMORY_UTILIZATION`과 `EMBEDDING_GPU_MEMORY_UTILIZATION` 환경 변수로 상한을 조정할 수 있습니다.
-5편·소설당 질문 10개·8×8 본 실험과 후속 분석은 모두 같은 Qwen2.5-7B 모델로 고정합니다. GPU 연산 사용률이 높은 시간에는
+5편·선택된 소설의 모든 질문·8×8 본 실험과 후속 분석은 모두 같은 Qwen2.5-7B 모델로 고정합니다. GPU 연산 사용률이 높은 시간에는
 메모리가 남아도 실행 속도가 크게 느려질 수 있습니다.
 
