@@ -46,8 +46,14 @@ def wait_models(client, model, timeout):
 
 def preflight(settings, timeout=600, factory=None):
     if settings.backend != 'official': raise ValueError('Server runner requires backend: official')
-    if not settings.corpus.exists() or not settings.questions.exists():
-        raise FileNotFoundError('Prepare corpus and questions before starting the GPU experiment')
+    missing = [path.resolve() for path in (settings.corpus, settings.questions) if not path.exists()]
+    if missing:
+        locations = "\n".join(f"- {path}" for path in missing)
+        raise FileNotFoundError(
+            "GraphRAG-Bench files are missing:\n"
+            f"{locations}\n"
+            "Run: bash scripts/download_novel_data.sh"
+        )
     if settings.embedding_dimensions <= 0 or settings.indexing_concurrency <= 0:
         raise ValueError('Embedding dimensions and indexing concurrency must be positive')
     if factory is None:
