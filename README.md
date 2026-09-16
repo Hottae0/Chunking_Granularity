@@ -192,3 +192,36 @@ process group을 종료하므로 GPU 메모리가 반환됩니다. 모델 가중
 `results_complete.json`에 절대 출력 경로, 64개 cell 완료 수, 필수 결과 파일의 절대 경로가 기록됩니다.
 중단 후 같은 명령을 다시 실행하면 완료된 그래프와 성공한 질문을 재사용합니다. 동일 output에 실험
 process를 동시에 두 개 실행하지 마세요. 실제 속도는 공유 GPU의 다른 작업 부하에 영향을 받습니다.
+
+## 연구실 서버 갱신·데이터·메모리 확인
+
+서버의 기존 clone을 최신 `main`으로 갱신합니다.
+
+```bash
+cd /home/hottae0/Chunking_Granularity
+git switch main
+git pull --ff-only origin main
+git rev-parse --short HEAD
+```
+
+GraphRAG-Bench 파일이 없으면 모델을 올리기 전에 다음을 실행합니다.
+
+```bash
+python -m pip install huggingface_hub
+bash scripts/download_novel_data.sh
+```
+
+다운로드가 끝나면 다음 두 파일의 절대 경로와 Novel·질문 수가 출력됩니다.
+
+```text
+/home/hottae0/Chunking_Granularity/data/GraphRAG-Bench/Datasets/Corpus/novel.json
+/home/hottae0/Chunking_Granularity/data/GraphRAG-Bench/Datasets/Questions/novel_questions.json
+```
+
+현재 H100의 81,559 MiB를 기준으로 vLLM 상한은 chat 55% 약 44.9 GiB,
+embedding 10% 약 8.2 GiB입니다. 기존 GPU 작업 약 14.9 GiB까지 합치면 상한 합계는
+약 68 GiB이고 약 13 GiB의 여유가 남습니다. Qwen2.5-14B BF16 가중치는 약 29–30 GiB,
+BGE-M3 가중치는 약 1–2 GiB이며 나머지는 KV cache와 실행 overhead입니다.
+모델 다운로드·캐시에는 디스크 약 35–45 GiB를 예상합니다. GPU 연산 사용률이 높은 시간에는
+메모리가 남아도 실행 속도가 크게 느려질 수 있습니다.
+
