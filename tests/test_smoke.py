@@ -46,6 +46,9 @@ class SmokeTests(unittest.TestCase):
             path.write_text(json.dumps(config), encoding="utf-8")
             output = run(path)
             self.assertEqual(json.loads((output / "run_manifest.json").read_text())["completed_cells"], 4)
+            manifest = json.loads((output / "run_manifest.json").read_text())
+            self.assertEqual(Path(manifest["output_directory"]), output.resolve())
+            self.assertIn("per_query_results.csv", manifest["result_files"])
             for file in ("per_query_results.csv", "config_summary.csv", "qa_heatmap.png",
                          "relation_recall_heatmap.png", "evidence_recall_heatmap.png",
                          "evidence_recall_proxy_heatmap.png", "run_manifest.json", "near_optimal_cells.csv", "bootstrap_ci.json"):
