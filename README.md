@@ -49,7 +49,7 @@ python -m rq1.experiments.run_grid --config configs/pilot.yaml
 python -m rq1.experiments.run_grid --config configs/full.yaml
 ```
 
-`full.yaml`은 seed 42로 Novel 5편을 선택하고, 선택된 5편의 질문을 전부 사용해 64조건을 평가합니다. 실제 질문 수와 총 QA 호출 수는 manifest에 기록됩니다.
+`full.yaml`은 seed 42로 Novel 5편을 선택하고, 선택된 5편의 질문을 전부 사용해 64조건을 평가합니다.
 실제 질문 수와 총 QA 호출 수는 입력 데이터에 따라 달라지며 manifest에 기록됩니다.
 `pilot.yaml`은 작은 사전 점검용입니다. 같은 명령으로 재개할 수 있습니다.
 설정이나 코드를 바꾸면 새 `data.output`을 사용하세요. 구버전의 식별 정보 없는 캐시는 재사용하지 않습니다.
