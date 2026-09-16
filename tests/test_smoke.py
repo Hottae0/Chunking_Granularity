@@ -48,11 +48,24 @@ class SmokeTests(unittest.TestCase):
             self.assertEqual(json.loads((output / "run_manifest.json").read_text())["completed_cells"], 4)
             for file in ("per_query_results.csv", "config_summary.csv", "qa_heatmap.png",
                          "relation_recall_heatmap.png", "evidence_recall_heatmap.png",
-                         "run_manifest.json", "near_optimal_cells.csv", "bootstrap_ci.json"):
+                         "evidence_recall_proxy_heatmap.png", "run_manifest.json", "near_optimal_cells.csv", "bootstrap_ci.json"):
                 self.assertTrue((output / file).exists(), file)
             with (output / "per_query_results.csv").open(newline="", encoding="utf-8") as stream:
                 rows = list(csv.DictReader(stream))
             self.assertEqual(len(rows), 8)
+            primary = {"qa_accuracy_proxy", "qa_em", "answer_f1"}
+            diagnostic = {
+                "relation_recall_proxy", "path_coverage_proxy",
+                "evidence_recall_at_1", "evidence_recall_at_5",
+                "evidence_recall_at_10", "fixed_budget_evidence_recall",
+                "evidence_recall_at_1_proxy", "evidence_recall_at_5_proxy",
+                "evidence_recall_at_10_proxy", "fixed_budget_evidence_recall_proxy",
+                "evidence_span_precision", "evidence_span_recall", "evidence_span_f1",
+            }
+            self.assertTrue(primary | diagnostic <= set(rows[0]))
+            with (output / "config_summary.csv").open(newline="", encoding="utf-8") as stream:
+                summary = list(csv.DictReader(stream))
+            self.assertTrue(primary | diagnostic <= set(summary[0]))
             run(path)
             with (output / "per_query_results.csv").open() as stream:
                 self.assertEqual(len(list(csv.DictReader(stream))), 8)
