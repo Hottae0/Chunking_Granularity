@@ -101,6 +101,7 @@ def _run_one(q, doc, search, chunks, relation_rows, settings, e, r, is_official)
                   "g_E": e, "g_R": r, "setting": "shared" if e == r else "stage_specific",
                   "status": "ok", "question": q.question, "gold_answer": q.answer,
                   "generated_answer": answer, "query_latency_seconds": latency,
+                  "official_answer_correctness": None,
                   "wall_seconds": time.perf_counter() - started,
                   "retrieved_tokens": sum(c.n_tokens for c in selected),
                   "llm_input_tokens": usage_in, "llm_output_tokens": usage_out,
@@ -166,8 +167,9 @@ def _manifest(settings, docs, questions, completed):
 
 def _summarize(settings, rows):
     summaries = []
-    metrics = ("qa_em", "answer_f1", "qa_accuracy_proxy", "relation_recall_proxy",
-               "path_coverage_proxy", "evidence_recall_at_1", "evidence_recall_at_5",
+    metrics = ("official_answer_correctness", "qa_em", "answer_f1", "qa_accuracy_proxy",
+               "relation_recall_proxy", "path_coverage_proxy",
+               "evidence_recall_at_1", "evidence_recall_at_5",
                "evidence_recall_at_10", "fixed_budget_evidence_recall",
                "evidence_recall_at_1_proxy", "evidence_recall_at_5_proxy",
                "evidence_recall_at_10_proxy", "fixed_budget_evidence_recall_proxy",
