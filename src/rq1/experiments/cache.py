@@ -7,7 +7,7 @@ from pathlib import Path
 
 def guard_run(settings, docs, questions):
     config = asdict(settings)
-    for key in ("api_key", "project", "output", "data_root", "questions", "corpus", "workers", "retries", "retry_delay_seconds"):
+    for key in ("api_key", "embedding_api_key", "project", "output", "data_root", "questions", "corpus", "workers", "retries", "retry_delay_seconds"):
         config.pop(key, None)
     package = Path(__file__).resolve().parents[1]
     code = {str(p.relative_to(package)): hashlib.sha256(p.read_bytes()).hexdigest()

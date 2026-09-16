@@ -33,6 +33,10 @@ class Settings:
     llm_backend: str
     chat_input_usd_per_million: float
     chat_output_usd_per_million: float
+    embedding_base_url: str
+    embedding_api_key: str
+    embedding_dimensions: int
+    indexing_concurrency: int
 
 
 def load_settings(config_path: str | Path) -> Settings:
@@ -66,7 +70,7 @@ def load_settings(config_path: str | Path) -> Settings:
         raise ValueError("overlap_ratio must be in [0,1)")
     if e.get("backend", "official") not in ("official", "mock"):
         raise ValueError("backend must be official or mock")
-    for key in ("context_tokens", "evidence_tokens", "workers"):
+    for key in ("context_tokens", "evidence_tokens", "workers", "indexing_concurrency"):
         if int(e.get(key, 1)) <= 0: raise ValueError(f"{key} must be positive")
     if int(e.get("retries", 3)) < 0: raise ValueError("retries must be nonnegative")
     root = project / d["root"]
@@ -83,4 +87,8 @@ def load_settings(config_path: str | Path) -> Settings:
                     os.getenv("EMBEDDING_MODEL", "unset"),
                     os.getenv("LLM_BACKEND", "openai_compatible"),
                     float(os.getenv("CHAT_INPUT_USD_PER_MILLION", "0")),
-                    float(os.getenv("CHAT_OUTPUT_USD_PER_MILLION", "0")))
+                    float(os.getenv("CHAT_OUTPUT_USD_PER_MILLION", "0")),
+                    os.getenv("EMBEDDING_BASE_URL") or os.getenv("BASE_URL", "http://127.0.0.1:8000/v1"),
+                    os.getenv("EMBEDDING_API_KEY") or os.getenv("API_KEY", "local-key"),
+                    int(os.getenv("EMBEDDING_DIMENSIONS", "3072")),
+                    int(e.get("indexing_concurrency", 2)))
