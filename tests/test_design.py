@@ -43,12 +43,12 @@ class DesignTests(unittest.TestCase):
             with self.assertRaises(ValueError): guard_run(replace(s,model='changed'),docs,qs)
             self.assertNotIn('api_key', (Path(d)/'cache_identity.json').read_text())
 
-    def test_cluster_selection_and_incomplete_grid(self):
+    def test_rq1_cluster_stability_and_incomplete_grid(self):
         rows=[dict(id=f'q{n}',source=f'b{n}',g_E=e,g_R=r,status='ok',answer_f1=.8 if e!=r else .5)
               for n in range(6) for e in (4,8) for r in (4,8)]
         a=analyze(rows,repetitions=50)
-        self.assertAlmostEqual(a['rq2']['held_out_delta'],.3)
-        self.assertFalse(set(a['rq2']['dev_novels']) & set(a['rq2']['test_novels']))
+        self.assertEqual(a['global_best'],[4,8])
+        self.assertAlmostEqual(a['bootstrap_off_diagonal_mass'],1.0)
         self.assertEqual(a,analyze(rows,repetitions=50))
         self.assertEqual(analyze(rows[:-1],repetitions=5)['status'],'incomplete')
 
@@ -67,5 +67,6 @@ class FullGridTests(unittest.TestCase):
             manifest=json.loads((out/'run_manifest.json').read_text())
             self.assertEqual(manifest['completed_cells'],64)
             self.assertEqual(len(list((out/'graphs').glob('e*'))),8)
+            self.assertTrue((out/'rq1_analysis.json').exists())
             with (out/'per_query_results.csv').open() as f:
                 self.assertEqual(len(list(csv.DictReader(f))),128)

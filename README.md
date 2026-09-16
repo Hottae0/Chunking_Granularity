@@ -1,4 +1,4 @@
-# Stage-specific chunk granularity — GraphRAG RQ1 / RQ2
+# Stage-specific chunk granularity — GraphRAG RQ1
 
 첨부 실험 설계의 fixed-length **8 × 8 factorial experiment** 구현입니다.
 `g_E`(그래프 추출)와 `g_R`(근거 검색)를 각각
@@ -68,10 +68,8 @@ Local Search가 graph tables와 source rows를 함께 포장하므로 표 헤더
 
 RQ1은 전체 grid의 joint optimum, 동률, 0.02 이내 영역과 소설 단위 bootstrap 최적 영역 안정성을 봅니다.
 개별 extraction fidelity의 독립 최적점을 증명한다고 해석하지 않습니다.
-RQ2는 seed로 소설을 dev/test에 나눠 dev에서 best diagonal/off-diagonal을 선택하고,
-선택한 두 조건을 고정하여 test 소설 단위 paired cluster bootstrap 95% CI를 계산합니다.
-최소 4편이 필요하며 한 편 합성 예제에서는 RQ2가 unavailable인 것이 정상입니다.
-원문 corpus는 공유하고 평가 질문을 소설별로 분리합니다. primary metric은 결과를 보기 전에 정하세요.
+현재 실험 범위는 RQ1만 포함합니다. 소설 전체를 cluster 단위로 재표집하여 global optimum이
+off-diagonal에 형성되는 빈도와 winner stability를 확인합니다. primary metric은 결과를 보기 전에 정하세요.
 
 ## 결과
 
@@ -80,15 +78,15 @@ RQ2는 seed로 소설을 dev/test에 나눠 dev에서 best diagonal/off-diagonal
 | `per_query_results.csv` | 질문별 답변, QA/관계/근거 지표, latency, 실제 검색 토큰 |
 | `config_summary.csv` | 64조건 평균과 오류 수 |
 | `question_type_summary.csv` | 네 질문 유형별 조건 요약 |
-| `rq1_rq2_analysis.json` | optimum 동률·bootstrap 빈도, dev 선택/test CI |
+| `rq1_analysis.json` | optimum 동률과 소설 단위 bootstrap winner 빈도 |
 | `near_optimal_cells.csv` | 최대 F1에서 0.02 이내 영역 |
 | `*_heatmap.png` | QA, relation, evidence 성능 지형 |
 | `run_manifest.json`, `cache_identity.json` | 설정·데이터 식별·버전·완료 상태 |
 | `cells/e*_r*/benchmark_predictions.json` | 공식 evaluator 입력 |
 
-`bootstrap_ci.json`은 기존 코드 호환용 **탐색적** 분석입니다. 동일 데이터에서 선택한 최고점 비교이므로
-논문 주장은 새 `rq1_rq2_analysis.json`의 held-out 결과를 사용하세요. 누락 cell이나 실패/미채점 질문이
-있으면 새 분석은 incomplete를 반환하고 성공 사례만 골라 최적값을 내지 않습니다.
+`bootstrap_ci.json`은 기존 코드 호환용 **탐색적** 분석입니다. RQ1의 주 분석은
+`rq1_analysis.json`에 기록됩니다. 누락 cell이나 실패/미채점 질문이 있으면 분석은 incomplete를
+반환하고 성공 사례만 골라 최적값을 내지 않습니다.
 
 EM/F1/accuracy_proxy는 로컬 문자열 지표입니다. relation recall/path coverage와 evidence statement
 recall은 단어 중첩 proxy입니다. evidence가 원문에 정확히 있으면 별도로 span 지표를 계산하고,

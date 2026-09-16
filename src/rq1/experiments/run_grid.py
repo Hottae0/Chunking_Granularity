@@ -283,7 +283,7 @@ def run(config_path: Path) -> Path:
     except ValueError as exc:
         logger.warning("Bootstrap unavailable: %s", exc)
     analysis = analyze(all_rows, sizes=settings.sizes, seed=settings.seed)
-    (settings.output / "rq1_rq2_analysis.json").write_text(json.dumps(analysis, indent=2))
+    (settings.output / "rq1_analysis.json").write_text(json.dumps(analysis, indent=2))
     type_rows = []
     for kind in sorted({x.get("question_type", "unknown") for x in all_rows}):
         type_rows.extend(dict(row, question_type=kind) for row in

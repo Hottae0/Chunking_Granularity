@@ -44,7 +44,7 @@ def paired_bootstrap(rows: list[dict], metric: str = "answer_f1", repetitions: i
             "best_diagonal": list(chosen_d), "best_off_diagonal": list(chosen_o),
             "observed_off_minus_diagonal": observed, "ci_95": [lower, upper],
             "bootstrap_repetitions": repetitions, "seed": seed,
-            "selection_note": "Cells selected on the same data; confirm on held-out questions for an unbiased claim."}
+            "selection_note": "Exploratory same-data cell selection; report selection uncertainty and avoid causal claims."}
 
 
 def main():
