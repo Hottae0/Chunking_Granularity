@@ -1,5 +1,5 @@
 experiment:
-  name: novel5_8x8
+  name: novel5_allq_8x8
   sizes: [128, 256, 512, 768, 1024, 1200, 1536, 2048]
   overlap_ratio: 0.0
   context_tokens: 4096
@@ -17,4 +17,4 @@ data:
   root: data/GraphRAG-Bench
   questions: Datasets/Questions/novel_questions.json
   corpus: Datasets/Corpus/novel.json
-  output: runs/novel5_8x8
+  output: runs/novel5_allq_8x8

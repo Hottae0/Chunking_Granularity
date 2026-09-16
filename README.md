@@ -113,7 +113,7 @@ recall은 단어 중첩 proxy입니다. evidence가 원문에 정확히 있으�
 python -m rq1.experiments.official_eval --config configs/full.yaml \
   --benchmark-root /path/to/GraphRAG-Benchmark \
   --judge-model YOUR_JUDGE --embedding-model /path/to/bge-model
-python -m rq1.experiments.analysis runs/novel5_8x8/per_query_results.csv \
+python -m rq1.experiments.analysis runs/novel5_allq_8x8/per_query_results.csv \
   --metric official_answer_correctness
 ```
 
@@ -153,7 +153,7 @@ cp .env.example .env
 ```dotenv
 BASE_URL=http://127.0.0.1:8000/v1
 API_KEY=local-key
-MODEL=Qwen/Qwen2.5-14B-Instruct
+MODEL=Qwen/Qwen2.5-7B-Instruct
 EMBEDDING_BASE_URL=http://127.0.0.1:8001/v1
 EMBEDDING_API_KEY=local-key
 EMBEDDING_MODEL=BAAI/bge-m3
@@ -166,8 +166,8 @@ LLM_BACKEND=openai_compatible
 ### 모델 서버와 실험 실행
 
 현재 연구실 서버 지시에 따라 **GPU 0 한 장만 사용**합니다. 각 터미널에서
-`export CUDA_VISIBLE_DEVICES="0"`을 먼저 실행하세요. 생성 모델은 GPU 메모리의 55%, 임베딩 모델은
-10%를 기본 상한으로 사용해 현재 공유 GPU의 기존 작업과 공존할 여유를 둡니다. 서버 사용량이 바뀌면
+`export CUDA_VISIBLE_DEVICES="0"`을 먼저 실행하세요. 생성 모델은 GPU 메모리의 30%, 임베딩 모델은
+6%를 기본 상한으로 사용해 현재 공유 GPU의 기존 작업과 공존할 여유를 둡니다. 서버 사용량이 바뀌면
 관리자와 확인한 뒤 비율을 조정하세요. `VLLM_BIN`에는 설치된 vLLM 실행 파일 경로를 지정할 수 있습니다.
 
 권장 실행은 한 명령으로 모델 서버의 시작과 종료까지 관리합니다.
@@ -178,7 +178,7 @@ export CUDA_VISIBLE_DEVICES="0"
 # 작은 연결·저장 점검
 bash scripts/run_server.sh configs/pilot.yaml
 
-# Novel 5편, 질문 전부, 8×8 본 실험
+# Novel 5편, 선택된 소설의 질문 전부, 8×8 본 실험
 bash scripts/run_server.sh configs/server.yaml
 ```
 
@@ -188,7 +188,7 @@ process group을 종료하므로 GPU 메모리가 반환됩니다. 모델 가중
 다운로드를 줄입니다. 모델 로그는 결과 폴더의 `model_logs/`에 저장됩니다.
 
 서버 저장소가 `/home/hottae0/Chunking_Granularity`에 있으면 본 실험 결과의 절대 경로는
-`/home/hottae0/Chunking_Granularity/runs/server_novel5_8x8`입니다. 완료 시
+`/home/hottae0/Chunking_Granularity/runs/server_novel5_allq_8x8`입니다. 완료 시
 `results_complete.json`에 절대 출력 경로, 64개 cell 완료 수, 필수 결과 파일의 절대 경로가 기록됩니다.
 중단 후 같은 명령을 다시 실행하면 완료된 그래프와 성공한 질문을 재사용합니다. 동일 output에 실험
 process를 동시에 두 개 실행하지 마세요. 실제 속도는 공유 GPU의 다른 작업 부하에 영향을 받습니다.
@@ -218,10 +218,12 @@ bash scripts/download_novel_data.sh
 /home/hottae0/Chunking_Granularity/data/GraphRAG-Bench/Datasets/Questions/novel_questions.json
 ```
 
-현재 H100의 81,559 MiB를 기준으로 vLLM 상한은 chat 55% 약 44.9 GiB,
-embedding 10% 약 8.2 GiB입니다. 기존 GPU 작업 약 14.9 GiB까지 합치면 상한 합계는
-약 68 GiB이고 약 13 GiB의 여유가 남습니다. Qwen2.5-14B BF16 가중치는 약 29–30 GiB,
-BGE-M3 가중치는 약 1–2 GiB이며 나머지는 KV cache와 실행 overhead입니다.
-모델 다운로드·캐시에는 디스크 약 35–45 GiB를 예상합니다. GPU 연산 사용률이 높은 시간에는
+현재 H100의 81,559 MiB를 기준으로 vLLM 상한은 chat 30% 약 23.9 GiB,
+embedding 6% 약 4.8 GiB로, 두 서버가 추가로 예약하는 상한은 약 28.7 GiB입니다.
+기존 GPU 작업이 약 19–20 GiB라면 전체 사용량은 약 48–49 GiB 수준입니다.
+Qwen2.5-7B BF16 가중치는 약 14–15 GiB, BGE-M3 가중치는 약 1–2 GiB이며
+나머지는 KV cache와 실행 overhead입니다. 모델 다운로드·캐시에는 디스크 약 18–25 GiB를 예상합니다.
+`CHAT_GPU_MEMORY_UTILIZATION`과 `EMBEDDING_GPU_MEMORY_UTILIZATION` 환경 변수로 상한을 조정할 수 있습니다.
+5편·선택된 소설의 모든 질문·8×8 본 실험과 후속 분석은 모두 같은 Qwen2.5-7B 모델로 고정합니다. GPU 연산 사용률이 높은 시간에는
 메모리가 남아도 실행 속도가 크게 느려질 수 있습니다.
 

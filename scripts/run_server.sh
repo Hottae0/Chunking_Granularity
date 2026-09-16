@@ -7,6 +7,9 @@ CONFIG="${1:-configs/server.yaml}"
 : "${CUDA_VISIBLE_DEVICES:=0}"
 export CUDA_VISIBLE_DEVICES
 
+CHAT_GPU_MEMORY_UTILIZATION="${CHAT_GPU_MEMORY_UTILIZATION:-0.30}"
+EMBEDDING_GPU_MEMORY_UTILIZATION="${EMBEDDING_GPU_MEMORY_UTILIZATION:-0.06}"
+
 OUTPUT_DIR="$(python -c 'import sys; from rq1.config import load_settings; print(load_settings(sys.argv[1]).output)' "$CONFIG")"
 MODEL_LOG_DIR="$OUTPUT_DIR/model_logs"
 mkdir -p "$MODEL_LOG_DIR"
@@ -44,10 +47,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "Starting chat and embedding models on CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
-setsid python -m rq1.server serve-chat --config "$CONFIG" --max-model-len 8192 \
+setsid python -m rq1.server serve-chat --config "$CONFIG" --max-model-len 8192 --gpu-memory-utilization "$CHAT_GPU_MEMORY_UTILIZATION" \
   >"$MODEL_LOG_DIR/chat.log" 2>&1 &
 CHAT_PID=$!
-setsid python -m rq1.server serve-embedding --config "$CONFIG" --max-model-len 8192 \
+setsid python -m rq1.server serve-embedding --config "$CONFIG" --max-model-len 8192 --gpu-memory-utilization "$EMBEDDING_GPU_MEMORY_UTILIZATION" \
   >"$MODEL_LOG_DIR/embedding.log" 2>&1 &
 EMBEDDING_PID=$!
 
