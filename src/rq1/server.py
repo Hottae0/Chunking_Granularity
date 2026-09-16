@@ -8,10 +8,12 @@ from pathlib import Path
 from rq1.config import load_settings
 
 
-def serve_command(kind, settings, tensor_parallel=1, memory=.85, max_model_len=8192, port=None):
+def serve_command(kind, settings, tensor_parallel=1, memory=None, max_model_len=8192, port=None):
+    embedding = kind == 'embedding'
+    # Lab server default: chat and embedding share one allocated H100.
+    memory = (0.10 if embedding else 0.55) if memory is None else memory
     if tensor_parallel < 1 or not 0 < memory < 1 or max_model_len < 1:
         raise ValueError('Invalid GPU serving parameters')
-    embedding = kind == 'embedding'
     model = settings.embedding_model if embedding else settings.model
     if model in ('unset', 'your-chat-model', 'your-embedding-model'):
         raise ValueError('Set MODEL and EMBEDDING_MODEL in .env first')
@@ -19,7 +21,10 @@ def serve_command(kind, settings, tensor_parallel=1, memory=.85, max_model_len=8
                '--host', '127.0.0.1', '--port', str(port or (8001 if embedding else 8000)),
                '--tensor-parallel-size', str(tensor_parallel),
                '--gpu-memory-utilization', str(memory), '--max-model-len', str(max_model_len)]
-    if embedding: command += ['--runner', 'pooling']
+    if embedding:
+        command += ['--runner', 'pooling']
+    else:
+        command += ['--generation-config', 'vllm']
     return command
 
 
@@ -79,7 +84,8 @@ def main():
     parser.add_argument('--config', type=Path, default=Path('configs/server.yaml'))
     parser.add_argument('--wait-seconds', type=float, default=600)
     parser.add_argument('--tensor-parallel', type=int, default=1)
-    parser.add_argument('--gpu-memory-utilization', type=float, default=.85)
+    parser.add_argument('--gpu-memory-utilization', type=float, default=None,
+                        help='Per-process vLLM fraction; defaults to 0.55 chat / 0.10 embedding')
     parser.add_argument('--max-model-len', type=int, default=8192)
     parser.add_argument('--port', type=int)
     args=parser.parse_args()
