@@ -61,7 +61,6 @@ class MockLocalSearch:
         qwords = set(re.findall(r"\w+", question.lower()))
         ranked = sorted(enumerate(self.chunks), key=lambda pair: (
             -len(qwords & set(re.findall(r"\w+", pair[1].text.lower()))), pair[0]))
-        ranked = [(i, c) for i, c in ranked if c.document == source]
         selected, used = [], 0
         for i, chunk in ranked:
             if used + chunk.n_tokens > self.evidence_budget:

@@ -1,12 +1,12 @@
 experiment:
-  name: novel5_8x8
+  name: novel20_8x8
   sizes: [128, 256, 512, 768, 1024, 1200, 1536, 2048]
   overlap_ratio: 0.0
   context_tokens: 4096
   evidence_tokens: 2048
   community_level: 2
   seed: 42
-  max_documents: 5
+  max_documents: null
   document_selection: seeded_random
   max_questions_per_document: null
   retries: 3
@@ -17,4 +17,4 @@ data:
   root: data/GraphRAG-Bench
   questions: Datasets/Questions/novel_questions.json
   corpus: Datasets/Corpus/novel.json
-  output: runs/novel5_8x8
+  output: runs/novel20_8x8

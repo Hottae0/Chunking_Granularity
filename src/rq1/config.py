@@ -64,6 +64,11 @@ def load_settings(config_path: str | Path) -> Settings:
     overlap = float(e.get("overlap_ratio", 0.0))
     if not 0 <= overlap < 1:
         raise ValueError("overlap_ratio must be in [0,1)")
+    if e.get("backend", "official") not in ("official", "mock"):
+        raise ValueError("backend must be official or mock")
+    for key in ("context_tokens", "evidence_tokens", "workers"):
+        if int(e.get(key, 1)) <= 0: raise ValueError(f"{key} must be positive")
+    if int(e.get("retries", 3)) < 0: raise ValueError("retries must be nonnegative")
     root = project / d["root"]
     return Settings(project, str(e["name"]), sizes, overlap,
                     int(e["context_tokens"]), int(e["evidence_tokens"]),

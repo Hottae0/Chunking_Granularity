@@ -21,6 +21,8 @@ from rq1.eval.qa_metrics import qa_proxy
 from rq1.eval.relation_metrics import relation_metrics
 from rq1.eval.retrieval_metrics import evidence_metrics, evidence_statement_proxy
 from rq1.experiments.bootstrap import paired_bootstrap
+from rq1.experiments.cache import guard_run
+from rq1.experiments.analysis import analyze
 from rq1.llm.llm_client import make_client
 from rq1.msgraphrag.byog_adapter import adapt_view
 from rq1.msgraphrag.indexer import build_graph, graph_dir
@@ -196,6 +198,7 @@ def run(config_path: Path) -> Path:
     docs, questions = load_novel(settings.corpus, settings.questions,
                                  settings.max_documents, settings.max_questions_per_document,
                                  settings.document_selection, settings.seed)
+    guard_run(settings, docs, questions)
     doc_lookup = {d.name: d for d in docs}
     all_questions = [q for d in docs for q in questions[d.name]]
     for e in settings.sizes:
@@ -207,6 +210,8 @@ def run(config_path: Path) -> Path:
             file = root / "mock_relations.json"
             if not file.exists():
                 file.write_text(json.dumps(_mock_graph(docs, e, settings.overlap_ratio)), encoding="utf-8")
+    retrieval_cache = {r: [c for d in docs for c in fixed_chunks(d.name, d.text, r, settings.overlap_ratio)]
+                       for r in settings.sizes}
     for e in settings.sizes:
         root = graph_dir(settings.output, e)
         for r in settings.sizes:
@@ -215,17 +220,17 @@ def run(config_path: Path) -> Path:
             cache_path = cell_dir / "per_query.csv"
             cached = {str(x["id"]): x for x in _read_csv(cache_path) if x.get("status") == "ok"}
             pending = [q for q in all_questions if q.id not in cached]
-            if not pending:
+            if not pending and (cell_dir / "benchmark_predictions.json").exists():
                 logger.info("Reuse cell e%d r%d", e, r)
                 continue
             logger.info("Cell e%d r%d: %d pending queries", e, r, len(pending))
             if settings.backend == "official":
-                tables, chunks, _ = adapt_view(root, docs, r, settings.overlap_ratio, cell_dir)
+                tables, chunks, _ = adapt_view(root, docs, r, settings.overlap_ratio, cell_dir, retrieval_cache[r])
                 search = OfficialLocalSearch(root, tables, settings.community_level)
                 relation_rows = tables["relationships"].to_dict("records")
             else:
                 client = make_client(settings)
-                chunks = [c for d in docs for c in fixed_chunks(d.name, d.text, r, settings.overlap_ratio)]
+                chunks = retrieval_cache[r]
                 graph = json.loads((root / "mock_relations.json").read_text(encoding="utf-8"))
                 for fact in graph:
                     span = Provenance(fact["id"], fact["document"], fact["start"], fact["end"], "exact_quote")
@@ -276,6 +281,13 @@ def run(config_path: Path) -> Path:
         (settings.output / "bootstrap_ci.json").write_text(json.dumps(bootstrap, indent=2), encoding="utf-8")
     except ValueError as exc:
         logger.warning("Bootstrap unavailable: %s", exc)
+    analysis = analyze(all_rows, sizes=settings.sizes, seed=settings.seed)
+    (settings.output / "rq1_rq2_analysis.json").write_text(json.dumps(analysis, indent=2))
+    type_rows = []
+    for kind in sorted({x.get("question_type", "unknown") for x in all_rows}):
+        type_rows.extend(dict(row, question_type=kind) for row in
+                         _summarize(settings, [x for x in all_rows if x.get("question_type") == kind]))
+    _write_csv(settings.output / "question_type_summary.csv", type_rows)
     completed = sum(len(rows := _read_csv(settings.output / "cells" / f"e{e}_r{r}" / "per_query.csv")) == len(all_questions)
                     and all(x.get("status") == "ok" for x in rows)
                     for e in settings.sizes for r in settings.sizes)

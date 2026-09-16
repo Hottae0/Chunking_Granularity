@@ -44,9 +44,9 @@ def evidence_metrics(evidence: tuple[str, ...], ranked_chunks,
             "fixed_budget_evidence_recall": None,
             "evidence_span_precision": None, "evidence_span_recall": None,
             "evidence_span_f1": None}
-    chunks = [c for c in ranked_chunks if c.document == source]
+    chunks = list(ranked_chunks)
     def recall(selected):
-        return sum(any(overlap(s, e, c.start, c.end) > 0 for c in selected) for s, e in spans) / len(spans)
+        return sum(any(c.document == source and overlap(s, e, c.start, c.end) > 0 for c in selected) for s, e in spans) / len(spans)
     results = {f"evidence_recall_at_{k}": recall(chunks[:k]) for k in (1, 5, 10)}
     selected, used = [], 0
     for chunk in chunks:
@@ -55,8 +55,8 @@ def evidence_metrics(evidence: tuple[str, ...], ranked_chunks,
         used += chunk.n_tokens
         selected.append(chunk)
     results["fixed_budget_evidence_recall"] = recall(selected)
-    gold_chars = set().union(*(set(range(s, e)) for s, e in spans))
-    found_chars = set().union(*(set(range(c.start, c.end)) for c in selected))
+    gold_chars = set().union(*(set((source, i) for i in range(s, e)) for s, e in spans))
+    found_chars = set().union(*(set((c.document, i) for i in range(c.start, c.end)) for c in selected))
     hit = len(gold_chars & found_chars)
     precision = hit / len(found_chars) if found_chars else 0.0
     gold_recall = hit / len(gold_chars) if gold_chars else 0.0
