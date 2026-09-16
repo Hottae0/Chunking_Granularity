@@ -170,25 +170,25 @@ LLM_BACKEND=openai_compatible
 10%를 기본 상한으로 사용해 현재 공유 GPU의 기존 작업과 공존할 여유를 둡니다. 서버 사용량이 바뀌면
 관리자와 확인한 뒤 비율을 조정하세요. `VLLM_BIN`에는 설치된 vLLM 실행 파일 경로를 지정할 수 있습니다.
 
+권장 실행은 한 명령으로 모델 서버의 시작과 종료까지 관리합니다.
+
 ```bash
-# 터미널 A: 생성 모델
 export CUDA_VISIBLE_DEVICES="0"
-python -m rq1.server serve-chat \
-  --config configs/server.yaml --max-model-len 8192
 
-# 터미널 B: 임베딩 모델
-export CUDA_VISIBLE_DEVICES="0"
-python -m rq1.server serve-embedding \
-  --config configs/server.yaml --max-model-len 8192
-
-# 터미널 C: 연결 점검, pilot, Novel 5편 전체 8×8
-export CUDA_VISIBLE_DEVICES="0"
-python -m rq1.server check --config configs/server.yaml --wait-seconds 600
+# 작은 연결·저장 점검
 bash scripts/run_server.sh configs/pilot.yaml
+
+# Novel 5편, 질문 전부, 8×8 본 실험
 bash scripts/run_server.sh configs/server.yaml
 ```
 
-`check`는 모델 이름, structured JSON 출력, 임베딩 차원을 확인합니다. `pilot.yaml`을 먼저 완료한 뒤
-전체 8×8 실험을 실행하세요. 중단되면 모델 서버를 다시 켜고 같은 config와 output으로 재실행하면
-완료된 그래프와 성공한 질문을 재사용합니다. 동일 output에 실험 프로세스를 동시에 두 개 실행하지 마세요.
-실제 GPU별 VRAM 요구량과 속도는 사용하는 모델에 따라 달라집니다.
+스크립트는 생성 모델과 임베딩 모델을 GPU 0에 올리고, endpoint/structured JSON/임베딩 차원을
+검사한 뒤 실험을 실행합니다. 정상 종료, 오류, Ctrl+C 모두에서 스크립트가 자신이 시작한 vLLM
+process group을 종료하므로 GPU 메모리가 반환됩니다. 모델 가중치 캐시는 서버 디스크에 남아 다음 실행의
+다운로드를 줄입니다. 모델 로그는 결과 폴더의 `model_logs/`에 저장됩니다.
+
+서버 저장소가 `/home/hottae0/Chunking_Granularity`에 있으면 본 실험 결과의 절대 경로는
+`/home/hottae0/Chunking_Granularity/runs/server_novel5_8x8`입니다. 완료 시
+`results_complete.json`에 절대 출력 경로, 64개 cell 완료 수, 필수 결과 파일의 절대 경로가 기록됩니다.
+중단 후 같은 명령을 다시 실행하면 완료된 그래프와 성공한 질문을 재사용합니다. 동일 output에 실험
+process를 동시에 두 개 실행하지 마세요. 실제 속도는 공유 GPU의 다른 작업 부하에 영향을 받습니다.
