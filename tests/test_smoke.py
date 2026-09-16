@@ -56,7 +56,7 @@ class SmokeTests(unittest.TestCase):
             with (output / "per_query_results.csv").open(newline="", encoding="utf-8") as stream:
                 rows = list(csv.DictReader(stream))
             self.assertEqual(len(rows), 8)
-            primary = {"qa_accuracy_proxy", "qa_em", "answer_f1"}
+            primary = {"official_answer_correctness", "qa_accuracy_proxy", "qa_em", "answer_f1"}
             diagnostic = {
                 "relation_recall_proxy", "path_coverage_proxy",
                 "evidence_recall_at_1", "evidence_recall_at_5",
