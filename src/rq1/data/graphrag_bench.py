@@ -59,12 +59,6 @@ def load_novel(corpus, questions, max_documents=None, max_questions_per_document
     for name, group in grouped.items():
         if max_questions_per_document is not None:
             if max_questions_per_document <= 0: raise ValueError("Question limit must be positive")
-            limit = min(max_questions_per_document, len(group))
-            if document_selection == "seeded_random":
-                rng = random.Random(f"{seed}:{name}")
-                indices = sorted(rng.sample(range(len(group)), limit))
-                grouped[name] = [group[index] for index in indices]
-            else:
-                grouped[name] = group[:limit]
+            grouped[name] = group[:max_questions_per_document]
         if not grouped[name]: raise ValueError(f"No questions for {name}")
     return docs, grouped
