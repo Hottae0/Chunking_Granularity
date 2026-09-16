@@ -131,8 +131,8 @@ QA 효과를 검증하는 연구 결과가 아닙니다. 실제 모델을 사용
 
 ## GPU가 할당된 서버·컨테이너에서 직접 실행
 
-이미 GPU가 할당된 서버나 컨테이너 안에서 실행하는 방법입니다. 코드는 GPU를 추가로 할당하거나
-`CUDA_VISIBLE_DEVICES`를 변경하지 않습니다. 생성 모델과 임베딩 모델은 vLLM의 OpenAI-compatible
+이미 GPU가 할당된 서버나 컨테이너 안에서 실행하는 방법입니다. 일반 Python 모듈은 GPU를 추가로 할당하지 않으며, 서버 실행 스크립트는 현재 할당 지시에 따라
+`CUDA_VISIBLE_DEVICES=1`로 고정합니다. 생성 모델과 임베딩 모델은 vLLM의 OpenAI-compatible
 endpoint로 실행하며, 기존 모델 서버가 있다면 `.env`에 해당 주소를 넣고 모델 실행 단계는 생략합니다.
 
 ### 준비
@@ -165,15 +165,15 @@ LLM_BACKEND=openai_compatible
 
 ### 모델 서버와 실험 실행
 
-현재 연구실 서버 지시에 따라 **GPU 0 한 장만 사용**합니다. 각 터미널에서
-`export CUDA_VISIBLE_DEVICES="0"`을 먼저 실행하세요. 생성 모델은 GPU 메모리의 30%, 임베딩 모델은
+현재 연구실 서버 지시에 따라 **물리 GPU 1번 한 장만 사용**합니다. `run_server.sh`가
+`CUDA_VISIBLE_DEVICES="1"`을 강제로 적용하므로 별도의 GPU 선택 명령은 필요하지 않습니다. 생성 모델은 GPU 메모리의 30%, 임베딩 모델은
 6%를 기본 상한으로 사용해 현재 공유 GPU의 기존 작업과 공존할 여유를 둡니다. 서버 사용량이 바뀌면
 관리자와 확인한 뒤 비율을 조정하세요. `VLLM_BIN`에는 설치된 vLLM 실행 파일 경로를 지정할 수 있습니다.
 
 권장 실행은 한 명령으로 모델 서버의 시작과 종료까지 관리합니다.
 
 ```bash
-export CUDA_VISIBLE_DEVICES="0"
+export CUDA_VISIBLE_DEVICES="1"
 
 # 작은 연결·저장 점검
 bash scripts/run_server.sh configs/pilot.yaml
@@ -182,7 +182,7 @@ bash scripts/run_server.sh configs/pilot.yaml
 bash scripts/run_server.sh configs/server.yaml
 ```
 
-스크립트는 생성 모델과 임베딩 모델을 GPU 0에 올리고, endpoint/structured JSON/임베딩 차원을
+스크립트는 생성 모델과 임베딩 모델을 GPU 1에 올리고, endpoint/structured JSON/임베딩 차원을
 검사한 뒤 실험을 실행합니다. 정상 종료, 오류, Ctrl+C 모두에서 스크립트가 자신이 시작한 vLLM
 process group을 종료하므로 GPU 메모리가 반환됩니다. 모델 가중치 캐시는 서버 디스크에 남아 다음 실행의
 다운로드를 줄입니다. 모델 로그는 결과 폴더의 `model_logs/`에 저장됩니다.
