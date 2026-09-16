@@ -111,6 +111,17 @@ def main():
         manifest=json.loads((output/'run_manifest.json').read_text())
         if manifest['completed_cells'] != manifest['expected_cells']:
             raise SystemExit('Incomplete experiment: inspect failed questions in per_query_results.csv and rerun')
+        required = [output / name for name in manifest['result_files']]
+        missing = [str(path) for path in required if not path.exists()]
+        if missing:
+            raise SystemExit(f'Experiment completed but result files are missing: {missing}')
+        (output/'results_complete.json').write_text(json.dumps({
+            'completed_at_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+            'output_directory': str(output.resolve()),
+            'completed_cells': manifest['completed_cells'],
+            'expected_cells': manifest['expected_cells'],
+            'result_files': [str(path.resolve()) for path in required],
+        }, ensure_ascii=False, indent=2), encoding='utf-8')
         print(output)
 
 if __name__ == '__main__': main()
