@@ -4,7 +4,11 @@ cd "$(dirname "$0")/.."
 export PYTHONUNBUFFERED=1
 
 CONFIG="${1:-configs/server.yaml}"
-export CUDA_VISIBLE_DEVICES="1"
+if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+  echo "Set CUDA_VISIBLE_DEVICES in the terminal before running this script." >&2
+  exit 1
+fi
+export CUDA_VISIBLE_DEVICES
 
 CHAT_GPU_MEMORY_UTILIZATION="${CHAT_GPU_MEMORY_UTILIZATION:-0.30}"
 EMBEDDING_GPU_MEMORY_UTILIZATION="${EMBEDDING_GPU_MEMORY_UTILIZATION:-0.06}"
