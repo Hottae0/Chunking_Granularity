@@ -1,9 +1,8 @@
-"""Prepare a smaller grid and reuse compatible graph work from a larger run."""
+"""Prepare a smaller grid using shared graph directories from a larger run."""
 from __future__ import annotations
 
 import argparse
 import json
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -110,25 +109,31 @@ def prepare(config: str | Path, source: str | Path, include_partial: bool = True
     for size in settings.sizes:
         source_graph = source / "graphs" / f"e{size}"
         target_graph = graph_target / f"e{size}"
+        if target_graph.is_symlink():
+            if target_graph.resolve() != source_graph.resolve():
+                raise ValueError(
+                    f"{target_graph} points to {target_graph.resolve()}, expected {source_graph}"
+                )
+            imported.append({"extraction_size": size, "status": "already_linked"})
+            continue
         if target_graph.exists():
-            imported.append({"extraction_size": size, "status": "already_present"})
-            continue
-        if not source_graph.exists():
-            imported.append({"extraction_size": size, "status": "not_available"})
-            continue
+            raise ValueError(
+                f"{target_graph} is a copied directory. Remove the preliminary output "
+                "directory and run preparation again to use space-saving graph links."
+            )
 
-        complete = _validate_graph(source_graph, size, documents, settings)
-        if not complete and not include_partial:
-            imported.append({"extraction_size": size, "status": "partial_skipped"})
-            continue
+        if source_graph.exists():
+            complete = _validate_graph(source_graph, size, documents, settings)
+            if not complete and not include_partial:
+                imported.append({"extraction_size": size, "status": "partial_skipped"})
+                continue
+            status = "linked_complete" if complete else "linked_partial"
+        else:
+            source_graph.mkdir(parents=True)
+            status = "linked_new"
 
-        shutil.copytree(source_graph, target_graph)
-        imported.append(
-            {
-                "extraction_size": size,
-                "status": "imported_complete" if complete else "imported_partial",
-            }
-        )
+        target_graph.symlink_to(source_graph.resolve(), target_is_directory=True)
+        imported.append({"extraction_size": size, "status": status})
 
     report = {
         "prepared_at_utc": datetime.now(timezone.utc).isoformat(),

@@ -181,7 +181,7 @@ export CUDA_VISIBLE_DEVICES="1"
 # 작은 연결·저장 점검
 bash scripts/run_server.sh configs/pilot.yaml
 
-# 사전실험 준비: 기존 8×8 폴더의 완료 그래프와 중단 캐시를 검증 후 복사
+# 사전실험 준비: 기존 8×8 그래프를 검증하고 공간 절약 링크로 공유
 bash scripts/prepare_preliminary_3x3.sh
 
 # Novel 5편, 선택된 소설의 질문 전부, 3×3 사전실험
@@ -190,6 +190,15 @@ bash scripts/run_server.sh configs/server_preliminary_3x3.yaml
 # Novel 5편, 선택된 소설의 질문 전부, 8×8 본 실험
 bash scripts/run_server.sh configs/server.yaml
 ```
+
+실행 중 다른 터미널에서 학습 epoch 대신 GraphRAG stage와 그래프/cell/QA 개수를 확인합니다.
+
+```bash
+bash scripts/watch_progress.sh configs/server_preliminary_3x3.yaml
+```
+
+화면에는 각 e값의 `WAITING / INDEXING/PARTIAL / COMPLETE`, 최근 GraphRAG workflow 로그,
+cache 파일 수, 완료 cell, 처리된 QA 수, 남은 디스크 공간이 10초마다 갱신됩니다.
 
 스크립트는 생성 모델과 임베딩 모델을 GPU 1에 올리고, endpoint/structured JSON/임베딩 차원을
 검사한 뒤 실험을 실행합니다. 정상 종료, 오류, Ctrl+C 모두에서 스크립트가 자신이 시작한 vLLM
@@ -201,10 +210,11 @@ process group을 종료하므로 GPU 메모리가 반환됩니다. 모델 가중
 - 사전실험: `/home/hottae0/Chunking_Granularity/runs/server_novel5_allq_preliminary_3x3` (9 cells)
 - 본 실험: `/home/hottae0/Chunking_Granularity/runs/server_novel5_allq_8x8` (64 cells)
 
-`prepare_preliminary_3x3.sh`는 기존 본 실험 폴더를 수정하지 않습니다. 완료된 e256 그래프는 그대로
-재사용하고, 중단된 e512 폴더가 있으면 GraphRAG 응답 캐시까지 새 사전실험 폴더로 복사해 재개합니다.
-복사 전에 선택 문서 원문, 모델, 임베딩 차원, chunk size와 overlap을 검사합니다. e1024가 없으면 새로
-구축합니다. 준비 내역은 `subset_preparation.json`에 남습니다.
+`prepare_preliminary_3x3.sh`는 그래프를 복사하지 않고 본 실험의 graph 폴더를 심볼릭 링크로
+공유합니다. 선택 문서 원문, 모델, 임베딩 차원, chunk size와 overlap을 먼저 검사합니다. 완료된 e256은
+바로 재사용하고, e512 재개와 새 e1024 구축 결과는 본 실험 graph 폴더에도 그대로 남습니다. 따라서 두
+모드를 동시에 실행하면 안 됩니다. 구버전 준비 스크립트가 만든 사전실험 복사본이 있다면 사전실험 output
+전체를 삭제한 뒤 준비 스크립트를 다시 실행하세요. 준비 내역은 `subset_preparation.json`에 남습니다.
 
 완료 시 `results_complete.json`에 절대 출력 경로, 완료 cell 수와 필수 결과 파일의 절대 경로가
 기록됩니다. 중단 후 같은 실행 명령을 다시 실행하면 완료된 그래프와 성공한 질문을 재사용합니다.
