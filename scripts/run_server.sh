@@ -4,8 +4,7 @@ cd "$(dirname "$0")/.."
 export PYTHONUNBUFFERED=1
 
 CONFIG="${1:-configs/server.yaml}"
-: "${CUDA_VISIBLE_DEVICES:=0}"
-export CUDA_VISIBLE_DEVICES
+export CUDA_VISIBLE_DEVICES="1"
 
 CHAT_GPU_MEMORY_UTILIZATION="${CHAT_GPU_MEMORY_UTILIZATION:-0.30}"
 EMBEDDING_GPU_MEMORY_UTILIZATION="${EMBEDDING_GPU_MEMORY_UTILIZATION:-0.06}"
@@ -13,6 +12,9 @@ EMBEDDING_GPU_MEMORY_UTILIZATION="${EMBEDDING_GPU_MEMORY_UTILIZATION:-0.06}"
 OUTPUT_DIR="$(python -c 'import sys; from rq1.config import load_settings; print(load_settings(sys.argv[1]).output)' "$CONFIG")"
 MODEL_LOG_DIR="$OUTPUT_DIR/model_logs"
 mkdir -p "$MODEL_LOG_DIR"
+
+echo "Validating benchmark data before model startup"
+python -m rq1.server validate-data --config "$CONFIG"
 
 if ! command -v setsid >/dev/null 2>&1; then
   echo "setsid is required so model workers can be stopped as one process group." >&2

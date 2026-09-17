@@ -1,9 +1,11 @@
 # Stage-specific chunk granularity — GraphRAG RQ1
 
-첨부 실험 설계의 fixed-length **8 × 8 factorial experiment** 구현입니다.
-`g_E`(그래프 추출)와 `g_R`(근거 검색)를 각각
-`128, 256, 512, 768, 1024, 1200, 1536, 2048` 토큰으로 바꿉니다.
-PDF 표의 검색 열에는 2048이 빠져 있지만, 본문 8×8 설명에 맞춰 양쪽 모두 8개를 사용합니다.
+첨부 실험 설계의 fixed-length chunk granularity 실험 구현입니다. 같은 코드에서 설정 파일만 바꿔 두 모드로 실행합니다.
+
+- **사전실험 3×3:** `g_E, g_R ∈ [256, 512, 1024]`
+- **본 실험 8×8:** `g_E, g_R ∈ [128, 256, 512, 768, 1024, 1200, 1536, 2048]`
+
+사전실험은 빠르게 경향을 확인하는 screening 용도이며, 최종 RQ1 결론은 본 실험과 공식 평가를 기준으로 냅니다.
 
 ## 재사용하는 것
 
@@ -51,7 +53,8 @@ python -m rq1.experiments.run_grid --config configs/full.yaml
 
 `full.yaml`은 seed 42로 Novel 5편을 선택하고, 선택된 5편의 질문을 전부 사용해 64조건을 평가합니다.
 실제 질문 수와 총 QA 호출 수는 입력 데이터에 따라 달라지며 manifest에 기록됩니다.
-`pilot.yaml`은 작은 사전 점검용입니다. 같은 명령으로 재개할 수 있습니다.
+`pilot.yaml`은 작은 연결 점검용입니다. 연구용 사전실험은 `server_preliminary_3x3.yaml`,
+본 실험은 `server.yaml`을 사용합니다. 두 설정은 같은 5편과 전체 질문을 사용하고 결과 폴더만 분리됩니다.
 설정이나 코드를 바꾸면 새 `data.output`을 사용하세요. 구버전의 식별 정보 없는 캐시는 재사용하지 않습니다.
 
 ## 실험 통제와 해석
@@ -76,7 +79,7 @@ off-diagonal에 형성되는 빈도와 winner stability를 확인합니다. prim
 | 파일 | 내용 |
 | --- | --- |
 | `per_query_results.csv` | 질문별 답변, QA/관계/근거 지표, latency, 실제 검색 토큰 |
-| `config_summary.csv` | 64조건 평균과 오류 수 |
+| `config_summary.csv` | 사전실험 9조건 또는 본 실험 64조건의 평균과 오류 수 |
 | `question_type_summary.csv` | 네 질문 유형별 조건 요약 |
 | `rq1_analysis.json` | optimum 동률과 소설 단위 bootstrap winner 빈도 |
 | `near_optimal_cells.csv` | 최대 F1에서 0.02 이내 영역 |
@@ -131,8 +134,8 @@ QA 효과를 검증하는 연구 결과가 아닙니다. 실제 모델을 사용
 
 ## GPU가 할당된 서버·컨테이너에서 직접 실행
 
-이미 GPU가 할당된 서버나 컨테이너 안에서 실행하는 방법입니다. 코드는 GPU를 추가로 할당하거나
-`CUDA_VISIBLE_DEVICES`를 변경하지 않습니다. 생성 모델과 임베딩 모델은 vLLM의 OpenAI-compatible
+이미 GPU가 할당된 서버나 컨테이너 안에서 실행하는 방법입니다. 일반 Python 모듈은 GPU를 추가로 할당하지 않으며, 서버 실행 스크립트는 현재 할당 지시에 따라
+`CUDA_VISIBLE_DEVICES=1`로 고정합니다. 생성 모델과 임베딩 모델은 vLLM의 OpenAI-compatible
 endpoint로 실행하며, 기존 모델 서버가 있다면 `.env`에 해당 주소를 넣고 모델 실행 단계는 생략합니다.
 
 ### 준비
@@ -165,33 +168,47 @@ LLM_BACKEND=openai_compatible
 
 ### 모델 서버와 실험 실행
 
-현재 연구실 서버 지시에 따라 **GPU 0 한 장만 사용**합니다. 각 터미널에서
-`export CUDA_VISIBLE_DEVICES="0"`을 먼저 실행하세요. 생성 모델은 GPU 메모리의 30%, 임베딩 모델은
+현재 연구실 서버 지시에 따라 **물리 GPU 1번 한 장만 사용**합니다. `run_server.sh`가
+`CUDA_VISIBLE_DEVICES="1"`을 강제로 적용하므로 별도의 GPU 선택 명령은 필요하지 않습니다. 생성 모델은 GPU 메모리의 30%, 임베딩 모델은
 6%를 기본 상한으로 사용해 현재 공유 GPU의 기존 작업과 공존할 여유를 둡니다. 서버 사용량이 바뀌면
 관리자와 확인한 뒤 비율을 조정하세요. `VLLM_BIN`에는 설치된 vLLM 실행 파일 경로를 지정할 수 있습니다.
 
 권장 실행은 한 명령으로 모델 서버의 시작과 종료까지 관리합니다.
 
 ```bash
-export CUDA_VISIBLE_DEVICES="0"
+export CUDA_VISIBLE_DEVICES="1"
 
 # 작은 연결·저장 점검
 bash scripts/run_server.sh configs/pilot.yaml
+
+# 사전실험 준비: 기존 8×8 폴더의 완료 그래프와 중단 캐시를 검증 후 복사
+bash scripts/prepare_preliminary_3x3.sh
+
+# Novel 5편, 선택된 소설의 질문 전부, 3×3 사전실험
+bash scripts/run_server.sh configs/server_preliminary_3x3.yaml
 
 # Novel 5편, 선택된 소설의 질문 전부, 8×8 본 실험
 bash scripts/run_server.sh configs/server.yaml
 ```
 
-스크립트는 생성 모델과 임베딩 모델을 GPU 0에 올리고, endpoint/structured JSON/임베딩 차원을
+스크립트는 생성 모델과 임베딩 모델을 GPU 1에 올리고, endpoint/structured JSON/임베딩 차원을
 검사한 뒤 실험을 실행합니다. 정상 종료, 오류, Ctrl+C 모두에서 스크립트가 자신이 시작한 vLLM
 process group을 종료하므로 GPU 메모리가 반환됩니다. 모델 가중치 캐시는 서버 디스크에 남아 다음 실행의
 다운로드를 줄입니다. 모델 로그는 결과 폴더의 `model_logs/`에 저장됩니다.
 
-서버 저장소가 `/home/hottae0/Chunking_Granularity`에 있으면 본 실험 결과의 절대 경로는
-`/home/hottae0/Chunking_Granularity/runs/server_novel5_allq_8x8`입니다. 완료 시
-`results_complete.json`에 절대 출력 경로, 64개 cell 완료 수, 필수 결과 파일의 절대 경로가 기록됩니다.
-중단 후 같은 명령을 다시 실행하면 완료된 그래프와 성공한 질문을 재사용합니다. 동일 output에 실험
-process를 동시에 두 개 실행하지 마세요. 실제 속도는 공유 GPU의 다른 작업 부하에 영향을 받습니다.
+서버 저장소가 `/home/hottae0/Chunking_Granularity`에 있으면 결과는 다음처럼 완전히 분리됩니다.
+
+- 사전실험: `/home/hottae0/Chunking_Granularity/runs/server_novel5_allq_preliminary_3x3` (9 cells)
+- 본 실험: `/home/hottae0/Chunking_Granularity/runs/server_novel5_allq_8x8` (64 cells)
+
+`prepare_preliminary_3x3.sh`는 기존 본 실험 폴더를 수정하지 않습니다. 완료된 e256 그래프는 그대로
+재사용하고, 중단된 e512 폴더가 있으면 GraphRAG 응답 캐시까지 새 사전실험 폴더로 복사해 재개합니다.
+복사 전에 선택 문서 원문, 모델, 임베딩 차원, chunk size와 overlap을 검사합니다. e1024가 없으면 새로
+구축합니다. 준비 내역은 `subset_preparation.json`에 남습니다.
+
+완료 시 `results_complete.json`에 절대 출력 경로, 완료 cell 수와 필수 결과 파일의 절대 경로가
+기록됩니다. 중단 후 같은 실행 명령을 다시 실행하면 완료된 그래프와 성공한 질문을 재사용합니다.
+동일 output에 실험 process를 동시에 두 개 실행하지 마세요. 실제 속도는 공유 GPU 부하에 영향을 받습니다.
 
 ## 연구실 서버 갱신·데이터·메모리 확인
 
@@ -224,6 +241,6 @@ embedding 6% 약 4.8 GiB로, 두 서버가 추가로 예약하는 상한은 약 
 Qwen2.5-7B BF16 가중치는 약 14–15 GiB, BGE-M3 가중치는 약 1–2 GiB이며
 나머지는 KV cache와 실행 overhead입니다. 모델 다운로드·캐시에는 디스크 약 18–25 GiB를 예상합니다.
 `CHAT_GPU_MEMORY_UTILIZATION`과 `EMBEDDING_GPU_MEMORY_UTILIZATION` 환경 변수로 상한을 조정할 수 있습니다.
-5편·선택된 소설의 모든 질문·8×8 본 실험과 후속 분석은 모두 같은 Qwen2.5-7B 모델로 고정합니다. GPU 연산 사용률이 높은 시간에는
+5편·선택된 소설의 모든 질문을 쓰는 3×3 사전실험과 8×8 본 실험, 후속 분석은 모두 같은 Qwen2.5-7B 모델로 고정합니다. GPU 연산 사용률이 높은 시간에는
 메모리가 남아도 실행 속도가 크게 느려질 수 있습니다.
 
