@@ -26,7 +26,7 @@ def _configured_models(raw: dict, section: str) -> set[str]:
     }
 
 
-def _validate_graph(source_graph: Path, extraction_size: int, documents) -> bool:
+def _validate_graph(source_graph: Path, extraction_size: int, documents, settings) -> bool:
     """Validate data/model/chunk compatibility; return whether the graph is complete."""
     settings_path = source_graph / "settings.yaml"
     titles_path = source_graph / "input_titles.json"
@@ -36,10 +36,32 @@ def _validate_graph(source_graph: Path, extraction_size: int, documents) -> bool
             raise ValueError(f"Cannot reuse {source_graph}: missing {required.name}")
 
     raw = yaml.safe_load(settings_path.read_text(encoding="utf-8")) or {}
-    actual_size = int((raw.get("chunking") or {}).get("size", -1))
-    if actual_size != extraction_size:
+    chunking = raw.get("chunking") or {}
+    actual_size = int(chunking.get("size", -1))
+    expected_overlap = int(extraction_size * settings.overlap_ratio)
+    actual_overlap = int(chunking.get("overlap", -1))
+    if actual_size != extraction_size or actual_overlap != expected_overlap:
         raise ValueError(
-            f"Cannot reuse {source_graph}: chunk size is {actual_size}, expected {extraction_size}"
+            f"Cannot reuse {source_graph}: chunking is size={actual_size}, "
+            f"overlap={actual_overlap}; expected size={extraction_size}, "
+            f"overlap={expected_overlap}"
+        )
+
+    completion_models = _configured_models(raw, "completion_models")
+    embedding_models = _configured_models(raw, "embedding_models")
+    if settings.model not in completion_models:
+        raise ValueError(
+            f"Cannot reuse {source_graph}: chat model differs ({sorted(completion_models)})"
+        )
+    if settings.embedding_model not in embedding_models:
+        raise ValueError(
+            f"Cannot reuse {source_graph}: embedding model differs ({sorted(embedding_models)})"
+        )
+    vector_size = int((raw.get("vector_store") or {}).get("vector_size", -1))
+    if vector_size != settings.embedding_dimensions:
+        raise ValueError(
+            f"Cannot reuse {source_graph}: embedding dimensions are {vector_size}, "
+            f"expected {settings.embedding_dimensions}"
         )
 
     expected_titles = {_input_name(doc.name): doc.name for doc in documents}
@@ -95,7 +117,7 @@ def prepare(config: str | Path, source: str | Path, include_partial: bool = True
             imported.append({"extraction_size": size, "status": "not_available"})
             continue
 
-        complete = _validate_graph(source_graph, size, documents)
+        complete = _validate_graph(source_graph, size, documents, settings)
         if not complete and not include_partial:
             imported.append({"extraction_size": size, "status": "partial_skipped"})
             continue
