@@ -8,8 +8,9 @@ from types import SimpleNamespace as NS
 from unittest.mock import patch
 from rq1.config import load_settings
 from rq1.server import preflight, serve_command
-from rq1.msgraphrag.indexer import _patch_settings
+from rq1.msgraphrag.indexer import REQUIRED_TABLES, _input_name, _patch_settings
 from rq1.experiments.cache import guard_run
+from rq1.experiments.prepare_subset import _validate_graph
 from rq1.data.graphrag_bench import load_novel, relation_statements
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -55,6 +56,35 @@ class ServerTests(unittest.TestCase):
         mapping = relation_statements({"source": "Alice", "relation": "knows", "target": "Bob"})
         self.assertEqual(len(mapping), 1)
         self.assertIn('"source": "Alice"', mapping[0])
+
+    def test_subset_graph_cache_validation(self):
+        import yaml
+        settings = self.settings()
+        documents, _ = load_novel(settings.corpus, settings.questions)
+        with tempfile.TemporaryDirectory() as tmp:
+            graph = Path(tmp)
+            (graph / 'input').mkdir()
+            (graph / 'output').mkdir()
+            titles = {}
+            for doc in documents:
+                name = _input_name(doc.name)
+                titles[name] = doc.name
+                (graph / 'input' / name).write_text(doc.text, encoding='utf-8')
+            (graph / 'input_titles.json').write_text(json.dumps(titles), encoding='utf-8')
+            raw = {
+                'completion_models': {'chat': {'model': settings.model}},
+                'embedding_models': {'embed': {'model': settings.embedding_model}},
+                'chunking': {'size': 256, 'overlap': 0},
+                'vector_store': {'vector_size': settings.embedding_dimensions},
+            }
+            (graph / 'settings.yaml').write_text(yaml.safe_dump(raw), encoding='utf-8')
+            self.assertFalse(_validate_graph(graph, 256, documents, settings))
+            for table in REQUIRED_TABLES:
+                (graph / 'output' / f'{table}.parquet').touch()
+            (graph / 'graph_complete.json').write_text('{}', encoding='utf-8')
+            self.assertTrue(_validate_graph(graph, 256, documents, settings))
+            with self.assertRaisesRegex(ValueError, 'chat model differs'):
+                _validate_graph(graph, 256, documents, replace(settings, model='other'))
 
     def test_index_settings_and_secret_free_cache(self):
         import yaml
