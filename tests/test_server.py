@@ -10,7 +10,7 @@ from rq1.config import load_settings
 from rq1.server import preflight, serve_command
 from rq1.msgraphrag.indexer import REQUIRED_TABLES, _input_name, _patch_settings
 from rq1.experiments.cache import guard_run
-from rq1.experiments.prepare_subset import _validate_graph
+from scripts.prepare_subset import _validate_graph
 from rq1.data.graphrag_bench import load_novel, relation_statements
 
 ROOT=Path(__file__).resolve().parents[1]
