@@ -4,7 +4,7 @@ backend:
   context_tokens: 4096
   evidence_tokens: 2048
   community_level: 2
-  community_prop: 0.0
+  community_prop: 0.15
   retries: 3
   retry_delay_seconds: 2
   workers: 1

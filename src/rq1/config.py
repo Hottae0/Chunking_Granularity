@@ -130,7 +130,7 @@ def load_settings(config_path: str | Path) -> Settings:
         context_tokens=int(option("context_tokens", 4096)),
         evidence_tokens=int(option("evidence_tokens", 2048)),
         community_level=int(option("community_level", 2)),
-        community_prop=float(option("community_prop", 0.0)), seed=int(e.get("seed", 42)),
+        community_prop=float(option("community_prop", 0.15, seed=int(e.get("seed", 42)),
         max_documents=e.get("max_documents"),
         document_selection=str(e.get("document_selection", "first")),
         max_questions_per_document=e.get("max_questions_per_document"),
