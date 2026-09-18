@@ -103,12 +103,11 @@ def _patch_settings(path: Path, settings, extraction_size: int) -> None:
     raw["chunking"]["encoding_model"] = "cl100k_base"
     raw["local_search"]["max_context_tokens"] = settings.context_tokens
     raw["local_search"]["text_unit_prop"] = 0.5
-    raw["local_search"]["community_prop"] = 0.0
+    raw["local_search"]["community_prop"] = settings.community_prop
     raw["cluster_graph"]["seed"] = settings.seed
     raw["output_storage"]["base_dir"] = "output"
     raw["cache"]["storage"]["base_dir"] = "cache"
     path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
-
 
 def build_graph(settings, documents, extraction_size: int, logger) -> Path:
     """Official standard index, once per g_E across the entire selected corpus."""

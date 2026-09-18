@@ -229,6 +229,43 @@ python -m rq1.server index --config configs/index_512.yaml
 
 `index_complete.json`과 `graph_complete.json`은 파이프라인 완료 표시이며, 개별 추출의 무오류를 보장하지 않습니다.
 
+### 512를 포함한 3×3 QA 측정
+
+`configs/qa_3x3.yaml`은 E/R 각각 `[128, 256, 512]`의 9조건을 비교합니다.
+기존 소설 5편, 전체 질문 513개와 모델·context 예산·provenance 연결 규칙을 유지합니다.
+이는 `[256, 512, 1024]`인 기존 사전실험 설정과 별개입니다.
+
+E512 인덱싱이 종료되고 모델 서버가 내려간 뒤 실행합니다.
+
+```bash
+conda activate graphrag_chunking
+export VLLM_BIN=/home/hottae0/miniconda3/envs/vllm-0101-cu128/bin/vllm
+export CUDA_VISIBLE_DEVICES="1"
+bash scripts/run_qa_3x3.sh
+```
+
+중앙 graph store의 E128/E256/E512 완료 여부와 입력·모델 호환성을 모델 시작 전에 검사합니다.
+미완료 그래프가 있으면 종료하며 QA 모드에서는 인덱싱을 실행하지 않습니다.
+동일 E 그래프를 R별로 재사용하고 셀별 검색 view를 생성한 뒤 QA를 측정합니다.
+모델 서버가 이미 준비되어 있다면 아래 명령을 사용합니다.
+
+```bash
+python -m rq1.server qa --config configs/qa_3x3.yaml
+```
+
+결과는 `runs/server_novel5_allq_128_256_512_3x3`에 저장합니다.
+처음 실행할 때는 **9 × 513 = 4617개 QA를 모두 새로 수행**합니다.
+기존 2×2 결과를 자동 복사·혼합하지 않으며, 새 3×3 실행이 중단되면 동일 코드·설정에서
+성공한 질문을 건너뛰고 재개합니다. 원본 그래프는 계속 중앙 저장소 한 곳에 보관합니다.
+
+기존과 동일하게 Answer F1, evidence/relation/path proxy, 응답 시간·검색 토큰,
+질문 유형별 집계, bootstrap 분석과 heatmap을 생성합니다. 공식 judge 평가는 별도입니다.
+
+```bash
+tail -f runs/server_novel5_allq_128_256_512_3x3/run.log
+bash scripts/watch_progress.sh configs/qa_3x3.yaml
+```
+
 `run_server.sh`는 실험용 Python 3.11/GraphRAG 3.1.2 환경과 별도 vLLM 실행 파일을
 시작 전에 검사합니다. 모델 캐시는 기본적으로 현재 사용자의 `~/.cache/huggingface`를 사용하며,
 다른 쓰기 가능한 위치가 필요하면 `MODEL_CACHE_DIR`로 지정합니다. 서버의 전역 CUDA 12.1

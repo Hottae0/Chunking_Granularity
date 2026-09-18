@@ -26,7 +26,7 @@ from rq1.experiments.cache import guard_run
 from rq1.experiments.analysis import analyze
 from rq1.llm.llm_client import make_client
 from rq1.msgraphrag.byog_adapter import adapt_view
-from rq1.msgraphrag.indexer import build_graph, graph_dir
+from rq1.msgraphrag.indexer import build_graph, graph_dir, validate_graph
 from rq1.plotting.heatmaps import heatmap
 from rq1.retrieval.local_search import MockLocalSearch, OfficialLocalSearch
 
@@ -219,8 +219,24 @@ def _acquire_run_lock(output: Path):
     return stream
 
 
-def run(config_path: Path) -> Path:
+def validate_qa_graphs(settings):
+    """Check every graph before starting a QA-only run; never build missing graphs."""
+    if settings.backend != "official":
+        raise ValueError("QA-only execution requires backend: official")
+    docs, questions = load_novel(settings.corpus, settings.questions,
+                                settings.max_documents, settings.max_questions_per_document,
+                                settings.document_selection, settings.seed)
+    for size in settings.sizes:
+        root = graph_dir(settings.output, size, settings.graph_store)
+        if not validate_graph(root, size, docs, settings):
+            raise ValueError(f"E{size} graph is incomplete at {root}; finish indexing before QA")
+    return docs, questions
+
+
+def run(config_path: Path, *, qa_only: bool = False) -> Path:
     settings = load_settings(config_path)
+    if qa_only:
+        validate_qa_graphs(settings)
     if settings.backend == "official":
         os.environ["GRAPHRAG_API_KEY"] = settings.api_key
         os.environ["GRAPHRAG_EMBEDDING_API_KEY"] = settings.embedding_api_key
@@ -238,7 +254,8 @@ def run(config_path: Path) -> Path:
     all_questions = [q for d in docs for q in questions[d.name]]
     for e in settings.sizes:
         if settings.backend == "official":
-            build_graph(settings, docs, e, logger)
+            if not qa_only:
+                build_graph(settings, docs, e, logger)
         else:
             root = graph_dir(settings.output, e, settings.graph_store)
             root.mkdir(parents=True, exist_ok=True)
@@ -341,8 +358,9 @@ def run(config_path: Path) -> Path:
 def main():
     parser = argparse.ArgumentParser(description="MS GraphRAG dual segmentation factorial grid")
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--qa-only", action="store_true", help="Require completed graphs; do not index")
     args = parser.parse_args()
-    print(run(args.config))
+    print(run(args.config, qa_only=args.qa_only))
 
 
 if __name__ == "__main__":

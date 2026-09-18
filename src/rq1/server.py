@@ -100,7 +100,7 @@ def preflight(settings, timeout=600, factory=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['validate-data','serve-chat','serve-embedding','check','run','index'])
+    parser.add_argument('action', choices=['validate-data','validate-graphs','serve-chat','serve-embedding','check','run','index','qa'])
     parser.add_argument('--config', type=Path, default=Path('configs/server.yaml'))
     parser.add_argument('--wait-seconds', type=float, default=600)
     parser.add_argument('--tensor-parallel', type=int, default=1)
@@ -110,6 +110,13 @@ def main():
     parser.add_argument('--port', type=int)
     args=parser.parse_args()
     settings=load_settings(args.config)
+    if args.action in ('validate-graphs', 'qa'):
+        from rq1.experiments.run_grid import validate_qa_graphs
+        docs, questions = validate_qa_graphs(settings)
+        if args.action == 'validate-graphs':
+            print(json.dumps(dict(sizes=settings.sizes, documents=len(docs),
+                                  questions=sum(map(len, questions.values()))), indent=2))
+            return
     if args.action == 'validate-data':
         print(json.dumps(validate_data(settings), indent=2))
         return
@@ -127,14 +134,14 @@ def main():
         from rq1.experiments.index_only import run
         print(run(args.config))
         return
-    if args.action == 'run':
+    if args.action in ('run', 'qa'):
         from rq1.experiments.run_grid import run
         settings.output.mkdir(parents=True, exist_ok=True)
         report['started_at_utc']=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
         report_dir=settings.output/'server_checks'
         report_dir.mkdir(exist_ok=True)
         (report_dir/f'{time.time_ns()}.json').write_text(json.dumps(report, indent=2))
-        output=run(args.config)
+        output=run(args.config, qa_only=args.action == 'qa')
         manifest=json.loads((output/'run_manifest.json').read_text())
         if manifest['completed_cells'] != manifest['expected_cells']:
             raise SystemExit('Incomplete experiment: inspect failed questions in per_query_results.csv and rerun')

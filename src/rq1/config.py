@@ -14,6 +14,7 @@ class Settings:
     context_tokens: int
     evidence_tokens: int
     community_level: int
+    community_prop: float
     seed: int
     max_documents: int | None
     document_selection: str
@@ -91,6 +92,7 @@ def load_settings(config_path: str | Path) -> Settings:
                     os.getenv("LLM_BACKEND", "openai_compatible"),
                     float(os.getenv("CHAT_INPUT_USD_PER_MILLION", "0")),
                     float(os.getenv("CHAT_OUTPUT_USD_PER_MILLION", "0")),
+                    float(e.get("community_prop", 0.15)),s
                     os.getenv("EMBEDDING_BASE_URL") or os.getenv("BASE_URL", "http://127.0.0.1:8000/v1"),
                     os.getenv("EMBEDDING_API_KEY") or os.getenv("API_KEY", "local-key"),
                     int(os.getenv("EMBEDDING_DIMENSIONS", "3072")),
