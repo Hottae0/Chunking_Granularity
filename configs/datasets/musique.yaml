@@ -1,0 +1,5 @@
+dataset:
+  name: musique
+  root: data/raw/musique
+  questions: questions.json
+  corpus: corpus

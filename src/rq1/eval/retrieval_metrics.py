@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rq1.alignment.provenance import overlap
+from rq1.core.alignment import overlap
 import re
 
 

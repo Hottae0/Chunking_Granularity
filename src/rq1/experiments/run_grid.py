@@ -14,21 +14,23 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
 
-from rq1.alignment.provenance import Provenance, align_fact
-from rq1.chunking.fixed import fixed_chunks
+from rq1.core.alignment import Provenance, align_fact
+from rq1.core.chunking import fixed_chunks
 from rq1.config import load_settings
-from rq1.data.graphrag_bench import load_novel
+from rq1.backends.registry import get_backend
+from rq1.datasets import load_dataset
 from rq1.eval.qa_metrics import qa_proxy
 from rq1.eval.relation_metrics import relation_metrics
 from rq1.eval.retrieval_metrics import evidence_metrics, evidence_statement_proxy
 from rq1.experiments.bootstrap import paired_bootstrap
 from rq1.experiments.cache import guard_run
 from rq1.experiments.analysis import analyze
+from rq1.experiments.qa_only import link_reusable_cells, validate_qa_indexes
 from rq1.llm.llm_client import make_client
-from rq1.msgraphrag.byog_adapter import adapt_view
-from rq1.msgraphrag.indexer import build_graph, graph_dir, validate_graph
+from rq1.backends.ms_graphrag.adapter import adapt_view
+from rq1.backends.ms_graphrag.indexer import build_graph, graph_dir
 from rq1.plotting.heatmaps import heatmap
-from rq1.retrieval.local_search import MockLocalSearch, OfficialLocalSearch
+from rq1.backends.ms_graphrag.search import MockLocalSearch, OfficialLocalSearch
 
 
 def _write_csv(path: Path, rows: list[dict]) -> None:
@@ -137,9 +139,9 @@ def _manifest(settings, docs, questions, completed):
             "project_root": str(settings.project.resolve()),
             "output_directory": str(settings.output.resolve()),
             "result_files": ["per_query_results.csv", "config_summary.csv",
-                             "question_type_summary.csv", "qa_heatmap.png",
-                             "relation_recall_heatmap.png", "evidence_recall_heatmap.png",
-                             "evidence_recall_proxy_heatmap.png", "rq1_analysis.json",
+                             "question_type_summary.csv", "figures/qa_heatmap.png",
+                             "figures/relation_heatmap.png", "figures/evidence_heatmap.png",
+                             "figures/evidence_proxy_heatmap.png", "rq1_analysis.json",
                              "near_optimal_cells.csv", "bootstrap_ci.json"],
             "primary_metrics": ["official_answer_correctness", "qa_accuracy_proxy", "qa_em", "answer_f1"],
             "diagnostic_metrics": ["relation_recall_proxy", "path_coverage_proxy",
@@ -150,7 +152,7 @@ def _manifest(settings, docs, questions, completed):
                                    "evidence_span_precision", "evidence_span_recall",
                                    "evidence_span_f1"],
             "name": settings.name, "backend": settings.backend,
-            "graph_store": str(settings.graph_store.resolve()) if settings.graph_store else None,
+            "index_store": str(settings.index_store.resolve()) if settings.index_store else None,
             "sizes": list(settings.sizes), "expected_graph_builds": len(settings.sizes),
             "expected_cells": len(settings.sizes) ** 2, "completed_cells": completed,
             "documents": [d.name for d in docs], "question_count": sum(len(x) for x in questions.values()),
@@ -219,25 +221,12 @@ def _acquire_run_lock(output: Path):
     return stream
 
 
-def validate_qa_graphs(settings):
-    """Check every graph before starting a QA-only run; never build missing graphs."""
-    if settings.backend != "official":
-        raise ValueError("QA-only execution requires backend: official")
-    docs, questions = load_novel(settings.corpus, settings.questions,
-                                settings.max_documents, settings.max_questions_per_document,
-                                settings.document_selection, settings.seed)
-    for size in settings.sizes:
-        root = graph_dir(settings.output, size, settings.graph_store)
-        if not validate_graph(root, size, docs, settings):
-            raise ValueError(f"E{size} graph is incomplete at {root}; finish indexing before QA")
-    return docs, questions
-
-
 def run(config_path: Path, *, qa_only: bool = False) -> Path:
     settings = load_settings(config_path)
+    get_backend(settings.backend)
     if qa_only:
-        validate_qa_graphs(settings)
-    if settings.backend == "official":
+        validate_qa_indexes(settings)
+    if settings.backend == "ms_graphrag":
         os.environ["GRAPHRAG_API_KEY"] = settings.api_key
         os.environ["GRAPHRAG_EMBEDDING_API_KEY"] = settings.embedding_api_key
     settings.output.mkdir(parents=True, exist_ok=True)
@@ -246,18 +235,20 @@ def run(config_path: Path, *, qa_only: bool = False) -> Path:
                         handlers=[logging.StreamHandler(sys.stdout),
                                   logging.FileHandler(settings.output / "run.log", encoding="utf-8")])
     logger = logging.getLogger(__name__)
-    docs, questions = load_novel(settings.corpus, settings.questions,
-                                 settings.max_documents, settings.max_questions_per_document,
-                                 settings.document_selection, settings.seed)
+    docs, questions = load_dataset(settings)
     guard_run(settings, docs, questions)
+    reuse = link_reusable_cells(settings, docs, questions) if settings.reuse_cells_from else []
+    for item in reuse:
+        if item["status"] == "linked":
+            logger.info("Reuse completed %s from %s", item["cell"], item["source"])
     doc_lookup = {d.name: d for d in docs}
     all_questions = [q for d in docs for q in questions[d.name]]
     for e in settings.sizes:
-        if settings.backend == "official":
+        if settings.backend == "ms_graphrag":
             if not qa_only:
                 build_graph(settings, docs, e, logger)
         else:
-            root = graph_dir(settings.output, e, settings.graph_store)
+            root = graph_dir(settings.output, e, settings.index_store)
             root.mkdir(parents=True, exist_ok=True)
             file = root / "mock_relations.json"
             if not file.exists():
@@ -265,7 +256,7 @@ def run(config_path: Path, *, qa_only: bool = False) -> Path:
     retrieval_cache = {r: [c for d in docs for c in fixed_chunks(d.name, d.text, r, settings.overlap_ratio)]
                        for r in settings.sizes}
     for e in settings.sizes:
-        root = graph_dir(settings.output, e, settings.graph_store)
+        root = graph_dir(settings.output, e, settings.index_store)
         for r in settings.sizes:
             cell_dir = settings.output / "cells" / f"e{e}_r{r}"
             cell_dir.mkdir(parents=True, exist_ok=True)
@@ -276,9 +267,10 @@ def run(config_path: Path, *, qa_only: bool = False) -> Path:
                 logger.info("Reuse cell e%d r%d", e, r)
                 continue
             logger.info("Cell e%d r%d: %d pending queries", e, r, len(pending))
-            if settings.backend == "official":
+            if settings.backend == "ms_graphrag":
                 tables, chunks, _ = adapt_view(root, docs, r, settings.overlap_ratio, cell_dir, retrieval_cache[r])
-                search = OfficialLocalSearch(root, tables, settings.community_level)
+                search = OfficialLocalSearch(root, tables, settings.community_level,
+                                             settings.context_tokens, settings.community_prop)
                 relation_rows = tables["relationships"].to_dict("records")
             else:
                 client = make_client(settings)
@@ -293,7 +285,7 @@ def run(config_path: Path, *, qa_only: bool = False) -> Path:
             benchmarks = []
             with ThreadPoolExecutor(max_workers=settings.workers) as pool:
                 futures = {pool.submit(_run_one, q, doc_lookup[q.source], search, chunks,
-                                       relation_rows, settings, e, r, settings.backend == "official"): q
+                                       relation_rows, settings, e, r, settings.backend == "ms_graphrag"): q
                            for q in pending}
                 for future in as_completed(futures):
                     result, benchmark = future.result()
@@ -320,13 +312,15 @@ def run(config_path: Path, *, qa_only: bool = False) -> Path:
     _write_csv(settings.output / "per_query_results.csv", all_rows)
     summaries = _summarize(settings, all_rows)
     _write_csv(settings.output / "config_summary.csv", summaries)
-    heatmap(summaries, settings.sizes, "answer_f1", settings.output / "qa_heatmap.png", "QA Answer F1 (local proxy)")
-    heatmap(summaries, settings.sizes, "relation_recall_proxy", settings.output / "relation_recall_heatmap.png",
+    figures = settings.output / "figures"
+    figures.mkdir(exist_ok=True)
+    heatmap(summaries, settings.sizes, "answer_f1", figures / "qa_heatmap.png", "QA Answer F1 (local proxy)")
+    heatmap(summaries, settings.sizes, "relation_recall_proxy", figures / "relation_heatmap.png",
             "Query-relevant relation recall (lexical proxy)")
-    heatmap(summaries, settings.sizes, "evidence_recall_at_5", settings.output / "evidence_recall_heatmap.png",
+    heatmap(summaries, settings.sizes, "evidence_recall_at_5", figures / "evidence_heatmap.png",
             "Evidence Recall@5 (source-span overlap)")
     heatmap(summaries, settings.sizes, "evidence_recall_at_5_proxy",
-            settings.output / "evidence_recall_proxy_heatmap.png",
+            figures / "evidence_proxy_heatmap.png",
             "Evidence statement Recall@5 (lexical proxy)")
     near, region = _optimal_region(summaries)
     _write_csv(settings.output / "near_optimal_cells.csv", near)
@@ -346,7 +340,7 @@ def run(config_path: Path, *, qa_only: bool = False) -> Path:
     completed = sum(len(rows := _read_csv(settings.output / "cells" / f"e{e}_r{r}" / "per_query.csv")) == len(all_questions)
                     and all(x.get("status") == "ok" for x in rows)
                     for e in settings.sizes for r in settings.sizes)
-    (settings.output / "run_manifest.json").write_text(
+    (settings.output / "manifest.json").write_text(
         json.dumps(_manifest(settings, docs, questions, completed), ensure_ascii=False, indent=2), encoding="utf-8")
     for handler in logging.getLogger().handlers[:]:
         logging.getLogger().removeHandler(handler)

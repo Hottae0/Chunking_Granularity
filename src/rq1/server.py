@@ -45,21 +45,18 @@ def wait_models(client, model, timeout):
 
 
 def validate_data(settings):
-    if settings.backend != 'official':
-        raise ValueError('Server runner requires backend: official')
+    if settings.backend != 'ms_graphrag':
+        raise ValueError('Server runner requires backend: ms_graphrag')
     missing = [path.resolve() for path in (settings.corpus, settings.questions) if not path.exists()]
     if missing:
         locations = "\n".join(f"- {path}" for path in missing)
         raise FileNotFoundError(
             "GraphRAG-Bench files are missing:\n"
             f"{locations}\n"
-            "Run: bash scripts/download_novel_data.sh"
+            "Run: bash scripts/download/download_graphrag_bench.sh"
         )
-    from rq1.data.graphrag_bench import load_novel
-    documents, grouped = load_novel(
-        settings.corpus, settings.questions, settings.max_documents,
-        settings.max_questions_per_document, settings.document_selection, settings.seed,
-    )
+    from rq1.datasets import load_dataset
+    documents, grouped = load_dataset(settings)
     return {
         'documents': len(documents),
         'questions': sum(len(items) for items in grouped.values()),
@@ -101,7 +98,7 @@ def preflight(settings, timeout=600, factory=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['validate-data','validate-graphs','serve-chat','serve-embedding','check','run','index','qa'])
-    parser.add_argument('--config', type=Path, default=Path('configs/server.yaml'))
+    parser.add_argument('--config', type=Path, default=Path('configs/experiments/rq1_full.yaml'))
     parser.add_argument('--wait-seconds', type=float, default=600)
     parser.add_argument('--tensor-parallel', type=int, default=1)
     parser.add_argument('--gpu-memory-utilization', type=float, default=None,
@@ -111,8 +108,8 @@ def main():
     args=parser.parse_args()
     settings=load_settings(args.config)
     if args.action in ('validate-graphs', 'qa'):
-        from rq1.experiments.run_grid import validate_qa_graphs
-        docs, questions = validate_qa_graphs(settings)
+        from rq1.experiments.qa_only import validate_qa_indexes
+        docs, questions = validate_qa_indexes(settings)
         if args.action == 'validate-graphs':
             print(json.dumps(dict(sizes=settings.sizes, documents=len(docs),
                                   questions=sum(map(len, questions.values()))), indent=2))
@@ -142,7 +139,7 @@ def main():
         report_dir.mkdir(exist_ok=True)
         (report_dir/f'{time.time_ns()}.json').write_text(json.dumps(report, indent=2))
         output=run(args.config, qa_only=args.action == 'qa')
-        manifest=json.loads((output/'run_manifest.json').read_text())
+        manifest=json.loads((output/'manifest.json').read_text())
         if manifest['completed_cells'] != manifest['expected_cells']:
             raise SystemExit('Incomplete experiment: inspect failed questions in per_query_results.csv and rerun')
         required = [output / name for name in manifest['result_files']]

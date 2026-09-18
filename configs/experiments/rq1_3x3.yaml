@@ -1,0 +1,14 @@
+experiment:
+  name: rq1_graphrag_bench_msgraphrag_3x3
+  dataset: graphrag_bench
+  backend: ms_graphrag
+  sizes: [128, 256, 512]
+  seed: 42
+  max_documents: 5
+  document_selection: seeded_random
+  max_questions_per_document: null
+  output: runs/experiments/rq1_graphrag_bench_msgraphrag_3x3
+  index_store: runs/indexes/ms_graphrag/graphrag_bench
+  reuse_cells_from:
+    - runs/experiments/rq1_graphrag_bench_msgraphrag_2x2
+  require_reuse_cells: [e128_r128, e128_r256, e256_r128, e256_r256]

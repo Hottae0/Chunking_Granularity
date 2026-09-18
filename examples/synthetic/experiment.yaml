@@ -1,0 +1,12 @@
+experiment:
+  name: synthetic
+  backend: mock
+  sizes: [4, 8]
+  seed: 42
+  max_documents: null
+  max_questions_per_document: null
+  output: runs/experiments/synthetic
+data:
+  root: examples/synthetic
+  questions: questions.json
+  corpus: corpus

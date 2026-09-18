@@ -1,0 +1,11 @@
+experiment:
+  name: rq1_graphrag_bench_msgraphrag_pilot
+  dataset: graphrag_bench
+  backend: ms_graphrag
+  sizes: [256, 512, 1200, 2048]
+  seed: 42
+  max_documents: 2
+  document_selection: seeded_random
+  max_questions_per_document: 10
+  output: runs/experiments/rq1_graphrag_bench_msgraphrag_pilot
+  index_store: runs/indexes/ms_graphrag/graphrag_bench_pilot

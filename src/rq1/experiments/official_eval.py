@@ -64,9 +64,11 @@ def run_official_eval(config: Path, benchmark_root: Path, judge_model: str,
         row["official_answer_correctness"] = _mean(group, "official_answer_correctness")
         row["official_scored_queries"] = sum(x.get("official_answer_correctness") not in (None, "") for x in group)
     _write_csv(settings.output / "config_summary.csv", summary)
+    figures = settings.output / "figures"
+    figures.mkdir(exist_ok=True)
     heatmap(summary, settings.sizes, "official_answer_correctness",
-            settings.output / "qa_heatmap.png", "Official GraphRAG-Bench answer correctness")
-    manifest_path = settings.output / "run_manifest.json"
+            figures / "qa_heatmap.png", "Official GraphRAG-Bench answer correctness")
+    manifest_path = settings.output / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["official_evaluation"] = {"judge_model": judge_model,
                                        "embedding_model": embedding_model,

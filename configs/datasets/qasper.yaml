@@ -1,0 +1,5 @@
+dataset:
+  name: qasper
+  root: data/raw/qasper
+  questions: questions.json
+  corpus: corpus

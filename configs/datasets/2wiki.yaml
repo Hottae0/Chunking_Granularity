@@ -1,0 +1,5 @@
+dataset:
+  name: 2wiki
+  root: data/raw/2wiki
+  questions: questions.json
+  corpus: corpus

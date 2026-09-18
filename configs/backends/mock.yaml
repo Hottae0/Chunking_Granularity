@@ -1,0 +1,11 @@
+backend:
+  name: mock
+  overlap_ratio: 0.0
+  context_tokens: 128
+  evidence_tokens: 64
+  community_level: 0
+  community_prop: 0.0
+  retries: 2
+  retry_delay_seconds: 0
+  workers: 1
+  indexing_concurrency: 1

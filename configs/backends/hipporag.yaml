@@ -1,0 +1,9 @@
+backend:
+  name: hipporag
+  overlap_ratio: 0.0
+  context_tokens: 4096
+  evidence_tokens: 2048
+  retries: 3
+  retry_delay_seconds: 2
+  workers: 1
+  indexing_concurrency: 1

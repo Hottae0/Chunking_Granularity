@@ -8,18 +8,15 @@ import os
 from pathlib import Path
 
 from rq1.config import load_settings
-from rq1.data.graphrag_bench import load_novel
-from rq1.msgraphrag.indexer import build_graph
+from rq1.datasets import load_dataset
+from rq1.backends.ms_graphrag.indexer import build_graph
 
 
 def run(config: Path) -> Path:
     settings = load_settings(config)
-    if settings.backend != "official":
-        raise ValueError("Index-only execution requires backend: official")
-    documents, questions = load_novel(
-        settings.corpus, settings.questions, settings.max_documents,
-        settings.max_questions_per_document, settings.document_selection, settings.seed,
-    )
+    if settings.backend != "ms_graphrag":
+        raise ValueError("Index-only execution requires backend: ms_graphrag")
+    documents, questions = load_dataset(settings)
     os.environ["GRAPHRAG_API_KEY"] = settings.api_key
     os.environ["GRAPHRAG_EMBEDDING_API_KEY"] = settings.embedding_api_key
     logging.basicConfig(level=logging.INFO)

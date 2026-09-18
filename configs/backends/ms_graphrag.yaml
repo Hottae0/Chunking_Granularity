@@ -1,0 +1,11 @@
+backend:
+  name: ms_graphrag
+  overlap_ratio: 0.0
+  context_tokens: 4096
+  evidence_tokens: 2048
+  community_level: 2
+  community_prop: 0.0
+  retries: 3
+  retry_delay_seconds: 2
+  workers: 1
+  indexing_concurrency: 2

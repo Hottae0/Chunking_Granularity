@@ -1,0 +1,5 @@
+dataset:
+  name: graphrag_bench
+  root: data/raw/graphrag_bench
+  questions: Datasets/Questions/novel_questions.json
+  corpus: Datasets/Corpus/novel.json
