@@ -26,6 +26,7 @@ class Settings:
     questions: Path
     corpus: Path
     output: Path
+    graph_store: Path | None
     base_url: str
     api_key: str
     model: str
@@ -74,6 +75,7 @@ def load_settings(config_path: str | Path) -> Settings:
         if int(e.get(key, 1)) <= 0: raise ValueError(f"{key} must be positive")
     if int(e.get("retries", 3)) < 0: raise ValueError("retries must be nonnegative")
     root = project / d["root"]
+    graph_store = project / d["graph_store"] if d.get("graph_store") else None
     return Settings(project, str(e["name"]), sizes, overlap,
                     int(e["context_tokens"]), int(e["evidence_tokens"]),
                     int(e["community_level"]), int(e["seed"]),
@@ -82,7 +84,8 @@ def load_settings(config_path: str | Path) -> Settings:
                     int(e.get("retries", 3)), float(e.get("retry_delay_seconds", 2)),
                     int(e.get("workers", 1)), str(e.get("backend", "official")),
                     root, root / d["questions"], root / d["corpus"],
-                    project / d["output"], os.getenv("BASE_URL", "http://127.0.0.1:8000/v1"),
+                    project / d["output"], graph_store,
+                    os.getenv("BASE_URL", "http://127.0.0.1:8000/v1"),
                     os.getenv("API_KEY", "local-key"), os.getenv("MODEL", "unset"),
                     os.getenv("EMBEDDING_MODEL", "unset"),
                     os.getenv("LLM_BACKEND", "openai_compatible"),

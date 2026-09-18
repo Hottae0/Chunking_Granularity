@@ -1,4 +1,4 @@
-"""Prepare a smaller grid using shared graph directories from a larger run."""
+"""Validate or import graphs into the graph store configured for a run."""
 from __future__ import annotations
 
 import argparse
@@ -6,80 +6,14 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml
-
 from rq1.config import load_settings
 from rq1.data.graphrag_bench import load_novel
 from rq1.experiments.cache import guard_run
-from rq1.msgraphrag.indexer import REQUIRED_TABLES, _input_name
-
-
-def _configured_models(raw: dict, section: str) -> set[str]:
-    entries = raw.get(section) or {}
-    if not isinstance(entries, dict):
-        raise ValueError(f"Invalid {section} in source graph settings")
-    return {
-        str(value["model"])
-        for value in entries.values()
-        if isinstance(value, dict) and value.get("model")
-    }
+from rq1.msgraphrag.indexer import validate_graph
 
 
 def _validate_graph(source_graph: Path, extraction_size: int, documents, settings) -> bool:
-    """Validate data/model/chunk compatibility; return whether the graph is complete."""
-    settings_path = source_graph / "settings.yaml"
-    titles_path = source_graph / "input_titles.json"
-    input_dir = source_graph / "input"
-    for required in (settings_path, titles_path, input_dir):
-        if not required.exists():
-            raise ValueError(f"Cannot reuse {source_graph}: missing {required.name}")
-
-    raw = yaml.safe_load(settings_path.read_text(encoding="utf-8")) or {}
-    chunking = raw.get("chunking") or {}
-    actual_size = int(chunking.get("size", -1))
-    expected_overlap = int(extraction_size * settings.overlap_ratio)
-    actual_overlap = int(chunking.get("overlap", -1))
-    if actual_size != extraction_size or actual_overlap != expected_overlap:
-        raise ValueError(
-            f"Cannot reuse {source_graph}: chunking is size={actual_size}, "
-            f"overlap={actual_overlap}; expected size={extraction_size}, "
-            f"overlap={expected_overlap}"
-        )
-
-    completion_models = _configured_models(raw, "completion_models")
-    embedding_models = _configured_models(raw, "embedding_models")
-    if settings.model not in completion_models:
-        raise ValueError(
-            f"Cannot reuse {source_graph}: chat model differs ({sorted(completion_models)})"
-        )
-    if settings.embedding_model not in embedding_models:
-        raise ValueError(
-            f"Cannot reuse {source_graph}: embedding model differs ({sorted(embedding_models)})"
-        )
-    vector_size = int((raw.get("vector_store") or {}).get("vector_size", -1))
-    if vector_size != settings.embedding_dimensions:
-        raise ValueError(
-            f"Cannot reuse {source_graph}: embedding dimensions are {vector_size}, "
-            f"expected {settings.embedding_dimensions}"
-        )
-
-    expected_titles = {_input_name(doc.name): doc.name for doc in documents}
-    actual_titles = json.loads(titles_path.read_text(encoding="utf-8"))
-    if actual_titles != expected_titles:
-        raise ValueError(f"Cannot reuse {source_graph}: selected documents differ")
-
-    for doc in documents:
-        input_path = input_dir / _input_name(doc.name)
-        if not input_path.exists() or input_path.read_text(encoding="utf-8") != doc.text:
-            raise ValueError(f"Cannot reuse {source_graph}: input text differs for {doc.name}")
-
-    return (
-        (source_graph / "graph_complete.json").exists()
-        and all(
-            (source_graph / "output" / f"{table}.parquet").exists()
-            for table in REQUIRED_TABLES
-        )
-    )
+    return validate_graph(source_graph, extraction_size, documents, settings)
 
 
 def prepare(config: str | Path, source: str | Path, include_partial: bool = True) -> dict:
@@ -94,21 +28,29 @@ def prepare(config: str | Path, source: str | Path, include_partial: bool = True
     )
 
     source = Path(source).resolve()
-    target = settings.output.resolve()
-    if source == target:
-        raise ValueError("Source and target output directories must differ")
+    target = (settings.graph_store or (settings.output / "graphs")).resolve()
     if not source.exists():
-        raise FileNotFoundError(f"Source run does not exist: {source}")
+        raise FileNotFoundError(f"Source graph store does not exist: {source}")
+    if (source / "graphs").is_dir():
+        source = (source / "graphs").resolve()
 
-    target.mkdir(parents=True, exist_ok=True)
+    settings.output.mkdir(parents=True, exist_ok=True)
     fingerprint = guard_run(settings, documents, questions)
-    graph_target = target / "graphs"
-    graph_target.mkdir(exist_ok=True)
+    target.mkdir(parents=True, exist_ok=True)
 
     imported: list[dict] = []
     for size in settings.sizes:
-        source_graph = source / "graphs" / f"e{size}"
-        target_graph = graph_target / f"e{size}"
+        source_graph = source / f"e{size}"
+        target_graph = target / f"e{size}"
+        if source == target:
+            if not source_graph.exists() or not any(source_graph.iterdir()):
+                source_graph.mkdir(parents=True, exist_ok=True)
+                imported.append({"extraction_size": size, "status": "store_empty"})
+                continue
+            complete = _validate_graph(source_graph, size, documents, settings)
+            status = "store_complete" if complete else "store_partial"
+            imported.append({"extraction_size": size, "status": status})
+            continue
         if target_graph.is_symlink():
             if target_graph.resolve() != source_graph.resolve():
                 raise ValueError(
@@ -139,7 +81,7 @@ def prepare(config: str | Path, source: str | Path, include_partial: bool = True
         "prepared_at_utc": datetime.now(timezone.utc).isoformat(),
         "config": str(Path(config).resolve()),
         "source_output": str(source),
-        "target_output": str(target),
+        "target_graph_store": str(target),
         "sizes": list(settings.sizes),
         "documents": len(documents),
         "questions": sum(len(items) for items in questions.values()),
@@ -155,7 +97,7 @@ def prepare(config: str | Path, source: str | Path, include_partial: bool = True
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--source", type=Path, required=True, help="Graph store containing e<size> directories")
     parser.add_argument(
         "--complete-only",
         action="store_true",

@@ -18,3 +18,4 @@ data:
   questions: Datasets/Questions/novel_questions.json
   corpus: Datasets/Corpus/novel.json
   output: runs/novel5_allq_8x8
+  graph_store: runs/_graph_store/novel5_seed42_qwen25_bge_m3

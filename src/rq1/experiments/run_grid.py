@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fcntl
 import hashlib
 import importlib.metadata
 import json
@@ -149,6 +150,7 @@ def _manifest(settings, docs, questions, completed):
                                    "evidence_span_precision", "evidence_span_recall",
                                    "evidence_span_f1"],
             "name": settings.name, "backend": settings.backend,
+            "graph_store": str(settings.graph_store.resolve()) if settings.graph_store else None,
             "sizes": list(settings.sizes), "expected_graph_builds": len(settings.sizes),
             "expected_cells": len(settings.sizes) ** 2, "completed_cells": completed,
             "documents": [d.name for d in docs], "question_count": sum(len(x) for x in questions.values()),
@@ -201,12 +203,29 @@ def _optimal_region(summaries, metric="answer_f1", delta=0.02):
                   "retrieval_sizes": sorted({x["g_R"] for x in near})}
 
 
+def _acquire_run_lock(output: Path):
+    """Hold an exclusive lock so concurrent processes cannot overwrite one run."""
+    path = output / ".run.lock"
+    stream = path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        stream.close()
+        raise RuntimeError(f"Another experiment is already writing to {output}") from None
+    stream.seek(0)
+    stream.truncate()
+    stream.write(f"pid={os.getpid()} started={time.time()}\n")
+    stream.flush()
+    return stream
+
+
 def run(config_path: Path) -> Path:
     settings = load_settings(config_path)
     if settings.backend == "official":
         os.environ["GRAPHRAG_API_KEY"] = settings.api_key
         os.environ["GRAPHRAG_EMBEDDING_API_KEY"] = settings.embedding_api_key
     settings.output.mkdir(parents=True, exist_ok=True)
+    run_lock = _acquire_run_lock(settings.output)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", force=True,
                         handlers=[logging.StreamHandler(sys.stdout),
                                   logging.FileHandler(settings.output / "run.log", encoding="utf-8")])
@@ -221,7 +240,7 @@ def run(config_path: Path) -> Path:
         if settings.backend == "official":
             build_graph(settings, docs, e, logger)
         else:
-            root = graph_dir(settings.output, e)
+            root = graph_dir(settings.output, e, settings.graph_store)
             root.mkdir(parents=True, exist_ok=True)
             file = root / "mock_relations.json"
             if not file.exists():
@@ -229,7 +248,7 @@ def run(config_path: Path) -> Path:
     retrieval_cache = {r: [c for d in docs for c in fixed_chunks(d.name, d.text, r, settings.overlap_ratio)]
                        for r in settings.sizes}
     for e in settings.sizes:
-        root = graph_dir(settings.output, e)
+        root = graph_dir(settings.output, e, settings.graph_store)
         for r in settings.sizes:
             cell_dir = settings.output / "cells" / f"e{e}_r{r}"
             cell_dir.mkdir(parents=True, exist_ok=True)
@@ -315,6 +334,7 @@ def run(config_path: Path) -> Path:
     for handler in logging.getLogger().handlers[:]:
         logging.getLogger().removeHandler(handler)
         handler.close()
+    run_lock.close()
     return settings.output
 
 

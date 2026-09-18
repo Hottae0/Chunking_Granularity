@@ -181,7 +181,7 @@ export CUDA_VISIBLE_DEVICES="1"
 # 작은 연결·저장 점검
 bash scripts/run_server.sh configs/pilot.yaml
 
-# 사전실험 준비: 기존 8×8 그래프를 검증하고 공간 절약 링크로 공유
+# 사전실험 준비: 중앙 graph store의 기존 그래프 검증
 bash scripts/prepare_preliminary_3x3.sh
 
 # Novel 5편, 선택된 소설의 질문 전부, 3×3 사전실험
@@ -190,6 +190,50 @@ bash scripts/run_server.sh configs/server_preliminary_3x3.yaml
 # Novel 5편, 선택된 소설의 질문 전부, 8×8 본 실험
 bash scripts/run_server.sh configs/server.yaml
 ```
+
+### E512만 인덱싱
+
+기존 소설 5편(seed 42)을 유지하면서 중앙 graph store의 `e512`만 인덱싱합니다.
+`configs/index_512.yaml`의 sizes는 `[512]`이며, 전용 `index` 동작은 retrieval view 생성이나
+QA를 실행하지 않습니다. 질문 513개는 데이터 확인에만 사용합니다.
+
+```bash
+conda activate graphrag_chunking
+export VLLM_BIN=/home/hottae0/miniconda3/envs/vllm-0101-cu128/bin/vllm
+export CUDA_VISIBLE_DEVICES="1"
+bash scripts/index_512.sh
+```
+
+모델 서버 시작·연결 검사·종료는 기존 `run_server.sh`를 공유합니다. 위 명령은 다음과 같습니다.
+
+```bash
+bash scripts/run_server.sh configs/index_512.yaml index
+```
+
+모델 서버가 이미 실행 중이면 다음 명령으로 연결 검사 후 인덱싱할 수 있습니다.
+
+```bash
+python -m rq1.server index --config configs/index_512.yaml
+```
+
+기존 E512 설정·입력·캐시를 검증하고 같은 위치에서 GraphRAG index를 다시 실행합니다.
+이는 단계 중간부터 정확히 이어가는 방식이 아니라, 남아 있는 LLM 캐시를 재사용하는 재실행입니다.
+완료 그래프는 건너뛰며, 동일 그래프에 대한 동시 인덱싱은 파일 잠금으로 차단합니다.
+기존 E128/E256과 비교 조건을 유지하기 위해 서버의 8192토큰 제한과 추출 설정은 변경하지 않았습니다.
+따라서 아래에 기록된 컨텍스트 초과 오류가 다시 발생할 가능성은 남아 있습니다.
+
+- 그래프: `runs/_graph_store/novel5_seed42_qwen25_bge_m3/e512`
+- 모델 로그: `runs/server_novel5_index_512/model_logs/`
+- 인덱싱 상세 로그: 그래프 경로의 `logs/indexing-engine.log`
+- 실행 완료 보고서: `runs/server_novel5_index_512/index_complete.json`
+
+`index_complete.json`과 `graph_complete.json`은 파이프라인 완료 표시이며, 개별 추출의 무오류를 보장하지 않습니다.
+
+`run_server.sh`는 실험용 Python 3.11/GraphRAG 3.1.2 환경과 별도 vLLM 실행 파일을
+시작 전에 검사합니다. 모델 캐시는 기본적으로 현재 사용자의 `~/.cache/huggingface`를 사용하며,
+다른 쓰기 가능한 위치가 필요하면 `MODEL_CACHE_DIR`로 지정합니다. 서버의 전역 CUDA 12.1
+라이브러리 경로는 제거하고 vLLM 0.10.1/Torch 2.7.1 cu128 wheel에 포함된 CUDA 12.8
+라이브러리를 사용합니다.
 
 실행 중 다른 터미널에서 학습 epoch 대신 GraphRAG stage와 그래프/cell/QA 개수를 확인합니다.
 
@@ -209,12 +253,13 @@ process group을 종료하므로 GPU 메모리가 반환됩니다. 모델 가중
 
 - 사전실험: `/home/hottae0/Chunking_Granularity/runs/server_novel5_allq_preliminary_3x3` (9 cells)
 - 본 실험: `/home/hottae0/Chunking_Granularity/runs/server_novel5_allq_8x8` (64 cells)
+- 공용 그래프: `/home/hottae0/Chunking_Granularity/runs/_graph_store/novel5_seed42_qwen25_bge_m3`
 
-`prepare_preliminary_3x3.sh`는 그래프를 복사하지 않고 본 실험의 graph 폴더를 심볼릭 링크로
-공유합니다. 선택 문서 원문, 모델, 임베딩 차원, chunk size와 overlap을 먼저 검사합니다. 완료된 e256은
-바로 재사용하고, e512 재개와 새 e1024 구축 결과는 본 실험 graph 폴더에도 그대로 남습니다. 따라서 두
-모드를 동시에 실행하면 안 됩니다. 구버전 준비 스크립트가 만든 사전실험 복사본이 있다면 사전실험 output
-전체를 삭제한 뒤 준비 스크립트를 다시 실행하세요. 준비 내역은 `subset_preparation.json`에 남습니다.
+각 설정의 `data.graph_store`가 이 공용 저장소를 직접 가리킵니다. 그래프를 실행 결과 폴더에 복사하거나
+링크할 필요가 없습니다. 재사용 전에 선택 문서 원문, 모델, 임베딩 차원, chunk size와 overlap을 검사합니다.
+완료된 e128/e256은 바로 재사용하고, 부분 완료 e512는 같은 위치에서 재개합니다. 같은 graph store에
+대해 두 indexing process를 동시에 실행하면 안 됩니다. 준비 내역은 graph store의
+`subset_preparation.json`에 남습니다.
 
 완료 시 `results_complete.json`에 절대 출력 경로, 완료 cell 수와 필수 결과 파일의 절대 경로가
 기록됩니다. 중단 후 같은 실행 명령을 다시 실행하면 완료된 그래프와 성공한 질문을 재사용합니다.
@@ -254,3 +299,95 @@ Qwen2.5-7B BF16 가중치는 약 14–15 GiB, BGE-M3 가중치는 약 1–2 GiB�
 5편·선택된 소설의 모든 질문을 쓰는 3×3 사전실험과 8×8 본 실험, 후속 분석은 모두 같은 Qwen2.5-7B 모델로 고정합니다. GPU 연산 사용률이 높은 시간에는
 메모리가 남아도 실행 속도가 크게 느려질 수 있습니다.
 
+## 현재 결과와 인수인계 기록 (2026-09-18)
+
+기존 `HANDOFF.md`의 운영 기록은 이 README로 통합했습니다. 기존 미커밋 변경과 실험 결과는 보존합니다.
+2×2 전용 실행 스크립트는 제거했으며, `configs/partial_2x2.yaml`은 기존 결과의 설정과 공식 평가용으로 유지합니다.
+필요한 경우 `bash scripts/run_server.sh configs/partial_2x2.yaml`로 실행할 수 있습니다.
+
+### 청크 정의와 인덱싱 조건
+
+- Extraction chunk(E)는 그래프 구축 시 엔티티·관계를 추출하는 원문 단위입니다.
+- Retrieval chunk(R)는 Local Search가 선택하여 답변 문맥에 넣는 원문 근거 단위입니다.
+- 동일 원문을 각 크기로 분할하고, 원문 문자 범위의 겹침으로 그래프 정보와 검색 청크를 연결합니다.
+  관계는 대체로 extraction chunk 전체를 출처 범위로 사용하므로 E는 근거 연결 폭에도 영향을 줍니다.
+- 같은 E에서 R만 바꿀 때는 동일 그래프를 재사용합니다. 검색 청크별 직접 벡터 검색 실험이 아니라
+  엔티티 임베딩과 그래프 연결을 사용하는 GraphRAG Local Search 실험입니다.
+
+실제 중앙 저장소 E128/E256/E512의 `settings.yaml`을 비교한 결과 차이는 `chunking.size`뿐이었습니다.
+입력 원문과 프롬프트 파일은 해시 비교에서 동일했습니다. 생성 모델 Qwen2.5-7B-Instruct,
+임베딩 BGE-M3(1024차원), tokenizer cl100k_base, overlap 0, seed 42,
+인덱싱 동시 요청 수 2와 서버 컨텍스트 제한 8192를 동일하게 사용합니다.
+
+단, 상세 인덱싱 로그에는 아래 오류가 기록되어 있습니다. 숫자는 단계별 오류 로그 건수이며
+최종 누락 개수나 고유 실패 청크 수를 확정한 수치는 아닙니다.
+
+| 오류 단계 | E128 | E256 |
+| --- | ---: | ---: |
+| 그래프 추출 | 1 | 1 |
+| Community report 생성 | 53 | 37 |
+
+그래프 추출은 입력 8236/8234토큰이 서버 제한 8192를 넘어 실패했습니다.
+추가 추출(gleaning)은 이전 응답을 포함하므로 원문 청크가 작아도 요청이 길어질 수 있습니다.
+Community report에는 컨텍스트 초과 및 JSON 형식 검증 실패 등이 있습니다.
+설치된 GraphRAG는 그래프 추출 예외 시 빈 엔티티·관계를 반환하고 진행할 수 있습니다.
+따라서 조건 설정은 동일하지만 오류의 영향까지 동일하다고 가정하면 안 되며,
+파이프라인 완료 및 QA 성공은 인덱싱 전 과정의 성공을 보장하지 않습니다.
+현재 Local Search의 community 비중은 0이지만, 실패의 최종 영향은 별도 검증이 필요합니다.
+
+### 완료된 2×2 결과
+
+결과 경로는 `runs/server_novel5_allq_2x2`입니다. 소설 5편의 전체 질문 513개를 사용했으며,
+네 셀 각각 고유 질문 513개와 `status=ok` 513개, 총 2052개 결과를 확인했습니다.
+완료 시각은 `2026-09-18T02:56:36Z`, `results_complete.json`은 4/4입니다.
+검색 문맥 파싱은 전체 성공했습니다. 실행 중 진행률 회귀 후 최종 행 수·고유성을 다시 확인했으며,
+동일 output의 중복 실행 방지 잠금이 추가되어 있습니다.
+
+| E / R | Answer F1 | Evidence@5 proxy | Relation recall proxy | Path coverage proxy | 평균 지연(초) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 128 / 128 | 0.275343 | 0.802171 | 0.918837 | 0.847953 | 3.457 |
+| 128 / 256 | 0.281282 | 0.890806 | 0.918837 | 0.847953 | 3.334 |
+| 256 / 128 | 0.274186 | 0.756074 | 0.893502 | 0.810916 | 2.668 |
+| 256 / 256 | 0.280667 | 0.874724 | 0.893502 | 0.810916 | 1.769 |
+
+R128→R256의 F1 변화는 E128에서 +0.005939(CI [0.003104, 0.008845]),
+E256에서 +0.006480(CI [0.000576, 0.010908])입니다.
+최고 셀 E128/R256과 E256/R256의 차이는 0.000615, paired bootstrap CI는
+[-0.007606, 0.008604]로 E의 우열은 불명확합니다. 질문별 승/패/동률은 250/251/12입니다.
+Bootstrap winner 비중은 각각 0.615/0.385이며 네 셀 모두 best 대비 0.02 이내입니다.
+소설별로 E128/R256이 3/5, E256/R256이 2/5에서 우세했습니다.
+질문 유형별 최고는 Fact retrieval·Complex reasoning에서 E128/R256,
+Context summarization에서 E256/R256, Creative generation에서 E128/R128(n=24)입니다.
+지연은 순차 실행의 warm-up/cache/order 및 공유 GPU 영향을 포함하므로 인과적 속도 차이로 해석하지 않습니다.
+
+공식 judge 점수는 아직 없으며, EM/accuracy proxy는 전부 0입니다.
+정확 evidence span 지표도 원문에서 evidence 문장을 찾지 못해 미채점입니다.
+현재 F1과 lexical proxy는 탐색적 비교용이며, 위 인덱싱 오류와 작은 크기 범위를 함께 고려해야 합니다.
+공식 평가 전에는 `official_eval.py`의 현재 output 연결과 task별 지원 지표를 검토하세요.
+
+```bash
+python -m rq1.experiments.official_eval --config configs/partial_2x2.yaml \
+  --benchmark-root /path/to/GraphRAG-Benchmark \
+  --judge-model YOUR_JUDGE --embedding-model /path/to/bge-model
+```
+
+### 저장소 및 환경 상태
+
+중앙 저장소는 `runs/_graph_store/novel5_seed42_qwen25_bge_m3`입니다.
+E128(약 96MB)과 E256(약 66MB)은 완료, E512(약 29MB)는 community report 생성 중
+디스크 부족으로 중단되어 캐시가 남아 있습니다. E512의 `community_reports.parquet`과
+`graph_complete.json`은 아직 없습니다. E768/1024/1200/1536/2048은 placeholder입니다.
+과거 결과의 일부 `graphs/e*` 심볼릭 링크는 이 저장소를 가리킵니다.
+과거 중복 캐시·오래된 결과 정리로 약 1.1GB를 확보했으며 추가 삭제 전에는 현재 필요 여부를 확인하세요.
+2026-09-18 재확인 시 파일시스템 여유 공간은 약 428GB였습니다(실행 전 `df -h .`로 재확인).
+
+실험 환경은 `/home/hottae0/miniconda3/envs/graphrag_chunking`의 Python 3.11.16,
+GraphRAG 3.1.2, NumPy 2.4.6입니다. 모델 서버는 별도 환경
+`/home/hottae0/miniconda3/envs/vllm-0101-cu128`의 vLLM 0.10.1,
+PyTorch 2.7.1+cu128, Transformers 4.55.0을 사용합니다.
+드라이버 570.181은 CUDA 12.8을 지원하며 시스템 CUDA toolkit 12.1과의 라이브러리 충돌을
+피하기 위해 실행 스크립트에서 `LD_LIBRARY_PATH`를 해제합니다.
+Hugging Face 캐시는 `/home/hottae0/.cache/huggingface`이며 모델 가중치는 합계 약 17GB입니다.
+
+다음 연구 단계는 E512 완성, 동일 소설 5편·전체 질문 513개를 유지한 확장 실험,
+공식 judge 평가와 최종 표·그래프 갱신입니다. 현재 변경 내역은 `git status --short`로 확인하세요.

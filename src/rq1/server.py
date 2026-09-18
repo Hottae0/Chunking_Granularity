@@ -100,7 +100,7 @@ def preflight(settings, timeout=600, factory=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['validate-data','serve-chat','serve-embedding','check','run'])
+    parser.add_argument('action', choices=['validate-data','serve-chat','serve-embedding','check','run','index'])
     parser.add_argument('--config', type=Path, default=Path('configs/server.yaml'))
     parser.add_argument('--wait-seconds', type=float, default=600)
     parser.add_argument('--tensor-parallel', type=int, default=1)
@@ -123,6 +123,10 @@ def main():
     if args.wait_seconds <= 0: parser.error('--wait-seconds must be positive')
     report=preflight(settings, args.wait_seconds)
     print(json.dumps(report, indent=2))
+    if args.action == 'index':
+        from rq1.experiments.index_only import run
+        print(run(args.config))
+        return
     if args.action == 'run':
         from rq1.experiments.run_grid import run
         settings.output.mkdir(parents=True, exist_ok=True)

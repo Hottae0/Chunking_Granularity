@@ -1,6 +1,6 @@
 experiment:
-  name: server_novel5_allq_preliminary_3x3
-  sizes: [256, 512, 1024]
+  name: server_novel5_index_512
+  sizes: [512]
   overlap_ratio: 0.0
   context_tokens: 4096
   evidence_tokens: 2048
@@ -18,5 +18,5 @@ data:
   root: data/GraphRAG-Bench
   questions: Datasets/Questions/novel_questions.json
   corpus: Datasets/Corpus/novel.json
-  output: runs/server_novel5_allq_preliminary_3x3
+  output: runs/server_novel5_index_512
   graph_store: runs/_graph_store/novel5_seed42_qwen25_bge_m3

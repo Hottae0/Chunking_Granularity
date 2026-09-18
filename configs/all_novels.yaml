@@ -17,3 +17,4 @@ data:
   questions: Datasets/Questions/novel_questions.json
   corpus: Datasets/Corpus/novel.json
   output: runs/all_novels_8x8
+  graph_store: runs/_graph_store/all_novels_qwen25_bge_m3

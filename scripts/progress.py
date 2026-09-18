@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rq1.config import load_settings
+from rq1.msgraphrag.indexer import graph_dir
 from rq1.data.graphrag_bench import load_novel
 
 
@@ -24,8 +25,8 @@ STAGE_WORDS = (
 )
 
 
-def _actual_graph(output: Path, size: int) -> Path:
-    graph = output / "graphs" / f"e{size}"
+def _actual_graph(output: Path, size: int, store: Path | None = None) -> Path:
+    graph = graph_dir(output, size, store)
     if graph.is_symlink():
         return graph.resolve()
     return graph
@@ -78,7 +79,7 @@ def snapshot(config: Path) -> str:
     graph_lines = []
     completed_graphs = 0
     for position, size in enumerate(settings.sizes, start=1):
-        graph = _actual_graph(settings.output, size)
+        graph = _actual_graph(settings.output, size, settings.graph_store)
         if (graph / "graph_complete.json").exists():
             state = "COMPLETE"
             completed_graphs += 1
@@ -117,6 +118,7 @@ def snapshot(config: Path) -> str:
         f"Updated: {datetime.now().isoformat(timespec='seconds')}",
         f"Mode: {settings.name}",
         f"Output: {settings.output.resolve()}",
+        f"Graph store: {(settings.graph_store or settings.output / 'graphs').resolve()}",
         f"Disk free: {free_gib:.2f} GiB",
         "",
         f"Graphs: {completed_graphs}/{len(settings.sizes)}",

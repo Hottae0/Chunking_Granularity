@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import fcntl
 import json
 import os
 import subprocess
@@ -13,12 +14,72 @@ REQUIRED_TABLES = ("entities", "relationships", "text_units", "documents",
                    "communities", "community_reports")
 
 
-def graph_dir(output: Path, extraction_size: int) -> Path:
-    return output / "graphs" / f"e{extraction_size}"
+def graph_dir(output: Path, extraction_size: int, graph_store: Path | None = None) -> Path:
+    """Resolve a graph from the shared store, falling back to a run-local store."""
+    return (graph_store if graph_store is not None else output / "graphs") / f"e{extraction_size}"
 
 
 def _input_name(source_name: str) -> str:
     return hashlib.sha256(source_name.encode("utf-8")).hexdigest()[:16] + ".txt"
+
+
+def _configured_models(raw: dict, section: str) -> set[str]:
+    entries = raw.get(section) or {}
+    if not isinstance(entries, dict):
+        raise ValueError(f"Invalid {section} in graph settings")
+    return {
+        str(value["model"])
+        for value in entries.values()
+        if isinstance(value, dict) and value.get("model")
+    }
+
+
+def validate_graph(root: Path, extraction_size: int, documents, settings) -> bool:
+    """Reject an incompatible shared graph and report whether it is complete."""
+    import yaml
+
+    settings_path = root / "settings.yaml"
+    titles_path = root / "input_titles.json"
+    input_dir = root / "input"
+    present = [path.exists() for path in (settings_path, titles_path, input_dir)]
+    if not any(present):
+        return False
+    if not all(present):
+        raise ValueError(f"Cannot reuse partial graph {root}: metadata is incomplete")
+
+    raw = yaml.safe_load(settings_path.read_text(encoding="utf-8")) or {}
+    chunking = raw.get("chunking") or {}
+    expected_overlap = int(extraction_size * settings.overlap_ratio)
+    actual_size = int(chunking.get("size", -1))
+    actual_overlap = int(chunking.get("overlap", -1))
+    if (actual_size, actual_overlap) != (extraction_size, expected_overlap):
+        raise ValueError(
+            f"Cannot reuse {root}: chunking is size={actual_size}, overlap={actual_overlap}; "
+            f"expected size={extraction_size}, overlap={expected_overlap}"
+        )
+    if settings.model not in _configured_models(raw, "completion_models"):
+        raise ValueError(f"Cannot reuse {root}: chat model differs")
+    if settings.embedding_model not in _configured_models(raw, "embedding_models"):
+        raise ValueError(f"Cannot reuse {root}: embedding model differs")
+    vector_size = int((raw.get("vector_store") or {}).get("vector_size", -1))
+    if vector_size != settings.embedding_dimensions:
+        raise ValueError(
+            f"Cannot reuse {root}: embedding dimensions are {vector_size}, "
+            f"expected {settings.embedding_dimensions}"
+        )
+
+    expected_titles = {_input_name(doc.name): doc.name for doc in documents}
+    if json.loads(titles_path.read_text(encoding="utf-8")) != expected_titles:
+        raise ValueError(f"Cannot reuse {root}: selected documents differ")
+    for doc in documents:
+        input_path = input_dir / _input_name(doc.name)
+        if not input_path.exists() or input_path.read_text(encoding="utf-8") != doc.text:
+            raise ValueError(f"Cannot reuse {root}: input text differs for {doc.name}")
+    output = root / "output"
+    return (
+        (root / "graph_complete.json").exists()
+        and all((output / f"{name}.parquet").exists() for name in REQUIRED_TABLES)
+    )
 
 
 def _patch_settings(path: Path, settings, extraction_size: int) -> None:
@@ -51,10 +112,22 @@ def _patch_settings(path: Path, settings, extraction_size: int) -> None:
 
 def build_graph(settings, documents, extraction_size: int, logger) -> Path:
     """Official standard index, once per g_E across the entire selected corpus."""
-    root = graph_dir(settings.output, extraction_size)
+    root = graph_dir(settings.output, extraction_size, settings.graph_store)
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / ".index.lock").open("a+") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(f"Another process is indexing {root}") from None
+        return _build_graph(settings, documents, extraction_size, logger)
+
+
+def _build_graph(settings, documents, extraction_size: int, logger) -> Path:
+    root = graph_dir(settings.output, extraction_size, settings.graph_store)
     output = root / "output"
     ready = root / "graph_complete.json"
-    if ready.exists() and all((output / f"{x}.parquet").exists() for x in REQUIRED_TABLES):
+    complete = validate_graph(root, extraction_size, documents, settings)
+    if complete:
         logger.info("Reuse graph %s", root)
         return root
     if settings.model == "unset" or settings.embedding_model == "unset":

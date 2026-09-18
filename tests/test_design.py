@@ -13,6 +13,16 @@ from rq1.eval.retrieval_metrics import evidence_metrics
 ROOT=Path(__file__).resolve().parents[1]
 
 class DesignTests(unittest.TestCase):
+    def test_run_output_lock(self):
+        from rq1.experiments.run_grid import _acquire_run_lock
+        with tempfile.TemporaryDirectory() as d:
+            first = _acquire_run_lock(Path(d))
+            try:
+                with self.assertRaisesRegex(RuntimeError, 'already writing'):
+                    _acquire_run_lock(Path(d))
+            finally:
+                first.close()
+
     def test_official_schema_and_missing_source(self):
         with tempfile.TemporaryDirectory() as d:
             c,q=Path(d)/'c.json',Path(d)/'q.json'
@@ -40,6 +50,10 @@ class DesignTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             s=replace(settings,output=Path(d))
             self.assertEqual(guard_run(s,docs,qs),guard_run(s,docs,qs))
+            self.assertEqual(
+                guard_run(s,docs,qs),
+                guard_run(replace(s,graph_store=Path(d)/'relocated-graphs'),docs,qs),
+            )
             with self.assertRaises(ValueError): guard_run(replace(s,model='changed'),docs,qs)
             self.assertNotIn('api_key', (Path(d)/'cache_identity.json').read_text())
 

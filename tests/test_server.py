@@ -8,7 +8,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import patch
 from rq1.config import load_settings
 from rq1.server import preflight, serve_command
-from rq1.msgraphrag.indexer import REQUIRED_TABLES, _input_name, _patch_settings
+from rq1.msgraphrag.indexer import REQUIRED_TABLES, _input_name, _patch_settings, graph_dir
 from rq1.experiments.cache import guard_run
 from scripts.prepare_subset import _validate_graph
 from rq1.data.graphrag_bench import load_novel, relation_statements
@@ -28,6 +28,13 @@ class ServerTests(unittest.TestCase):
             self.assertIn('pooling',command)
             self.assertEqual(os.environ['CUDA_VISIBLE_DEVICES'],'GPU-allocated')
         with self.assertRaises(ValueError): serve_command('chat',self.settings(),tensor_parallel=0)
+
+    def test_shared_graph_store_resolution(self):
+        settings = replace(self.settings(), graph_store=ROOT/'runs'/'shared-test-graphs')
+        self.assertEqual(
+            graph_dir(settings.output, 256, settings.graph_store),
+            settings.graph_store/'e256',
+        )
 
     def test_preflight_two_endpoints_and_dimensions(self):
         calls=[]
